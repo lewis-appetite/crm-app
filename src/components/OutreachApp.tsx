@@ -200,7 +200,7 @@ export default function OutreachApp() {
                 </div>
                 <p className={styles.messageItemBody}>{msg.fullMessage}</p>
                 <button
-                  className={}
+                  className={`${styles.copyBtn} ${copiedMsg === msg.abbreviation ? styles.copyBtnDone : ''}`}
                   onClick={() => handleCopyMessage(msg.fullMessage, msg.abbreviation)}
                 >
                   {copiedMsg === msg.abbreviation ? (
@@ -379,7 +379,7 @@ export default function OutreachApp() {
               </button>
             </div>
           </>
-        ) : null}
+        )}
       </main>
     </div>
   );
