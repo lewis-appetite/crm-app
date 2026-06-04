@@ -12,7 +12,7 @@ interface SheetData {
   intervalDays: number;
 }
 
-type Tab = 'followup' | 'new';
+type Tab = 'followup' | 'new' | 'messages';
 
 export default function OutreachApp() {
   const [data, setData] = useState<SheetData | null>(null);
@@ -21,6 +21,8 @@ export default function OutreachApp() {
   const [tab, setTab] = useState<Tab>('followup');
   const [index, setIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
+  const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,6 +104,14 @@ export default function OutreachApp() {
     });
   }
 
+  function handleCopyMessage(text: string, abbr: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedMsg(abbr);
+      if (msgCopyTimeout.current) clearTimeout(msgCopyTimeout.current);
+      msgCopyTimeout.current = setTimeout(() => setCopiedMsg(null), 2000);
+    });
+  }
+
   function handleTabSwitch(t: Tab) {
     setTab(t);
     setIndex(0);
@@ -177,7 +187,43 @@ export default function OutreachApp() {
 
       {/* Main content */}
       <main className={styles.main}>
-        {queue.length === 0 ? (
+        {tab === 'messages' ? (
+          <div className={styles.messagesList}>
+            {!data ? null : data.messages.map((msg, i) => (
+              <div key={i} className={styles.messageItem}>
+                <div className={styles.messageItemHeader}>
+                  <div className={styles.messageItemMeta}>
+                    <span className={styles.messageTypeBadge}>{msg.messageType}</span>
+                    <span className={styles.messageTarget}>{msg.target}</span>
+                  </div>
+                  <span className={styles.messageAbbr}>{msg.abbreviation}</span>
+                </div>
+                <p className={styles.messageItemBody}>{msg.fullMessage}</p>
+                <button
+                  className={}
+                  onClick={() => handleCopyMessage(msg.fullMessage, msg.abbreviation)}
+                >
+                  {copiedMsg === msg.abbreviation ? (
+                    <>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                      </svg>
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : queue.length === 0 ? (
           <div className={styles.emptyState}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
@@ -333,7 +379,7 @@ export default function OutreachApp() {
               </button>
             </div>
           </>
-        )}
+        ) : null}
       </main>
     </div>
   );
