@@ -182,6 +182,12 @@ export default function OutreachApp() {
               {data ? data.newContacts.filter(c => !dismissed.has(c.rowIndex)).length : 0}
             </span>
           </button>
+          <button
+            className={`${styles.tab} ${tab === 'messages' ? styles.tabActive : ''}`}
+            onClick={() => handleTabSwitch('messages')}
+          >
+            Messages
+          </button>
         </div>
       </header>
 
