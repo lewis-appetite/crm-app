@@ -133,15 +133,20 @@ export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Con
       return days >= intervalDays;
     })
     .sort((a, b) => {
+      const aHasFollowUp = !!a.followUpMessage1;
+      const bHasFollowUp = !!b.followUpMessage1;
+      // No follow-up sent yet floats to top
+      if (aHasFollowUp !== bHasFollowUp) return aHasFollowUp ? 1 : -1;
+      // Within each group, oldest last contacted first
       const da = parseDate(a.lastContacted);
       const db = parseDate(b.lastContacted);
       if (!da || !db) return 0;
-      return da.getTime() - db.getTime(); // oldest first
+      return da.getTime() - db.getTime();
     });
 }
 
 export function getNewContactsQueue(contacts: Contact[]): Contact[] {
-  return contacts.filter(c => !c.message && !isDead(c));
+  return contacts.filter(c => !c.message && !c.lastContacted && !isDead(c));
 }
 
 export function suggestMessage(

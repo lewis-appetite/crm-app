@@ -44,6 +44,12 @@ export default function OutreachApp() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Reset copied state whenever the visible contact changes
+  useEffect(() => {
+    setCopied(false);
+    if (copyTimeout.current) clearTimeout(copyTimeout.current);
+  }, [index, tab, dismissed]);
+
   const queue = data
     ? (tab === 'followup' ? data.followUps : data.newContacts).filter(
         c => !dismissed.has(c.rowIndex)
