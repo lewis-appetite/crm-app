@@ -12,7 +12,7 @@ interface SheetData {
   intervalDays: number;
 }
 
-type Tab = 'followup' | 'new' | 'messages';
+type Tab = 'followup' | 'new' | 'messages' | 'connections';
 
 export default function OutreachApp() {
   const [data, setData] = useState<SheetData | null>(null);
@@ -20,6 +20,7 @@ export default function OutreachApp() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('followup');
   const [index, setIndex] = useState(0);
+  const [search, setSearch] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
   const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,12 +189,66 @@ export default function OutreachApp() {
           >
             Messages
           </button>
+          <button
+            className={`${styles.tab} ${tab === 'connections' ? styles.tabActive : ''}`}
+            onClick={() => handleTabSwitch('connections')}
+          >
+            All
+            <span className={styles.tabCount}>
+              {data ? data.allContacts.length : 0}
+            </span>
+          </button>
         </div>
       </header>
 
       {/* Main content */}
       <main className={styles.main}>
-        {tab === 'messages' ? (
+        {tab === 'connections' ? (
+          <div className={styles.connectionsList}>
+            <input
+              className={styles.searchInput}
+              type="search"
+              placeholder="Search name, company, position…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {(data?.allContacts ?? [])
+              .filter(c => {
+                if (!search.trim()) return true;
+                const q = search.toLowerCase();
+                return (
+                  c.fullName.toLowerCase().includes(q) ||
+                  c.company.toLowerCase().includes(q) ||
+                  c.position.toLowerCase().includes(q)
+                );
+              })
+              .map(c => {
+                const days = daysAgo(c.lastContacted);
+                const isOverdue = days !== null && days >= intervalDays && !!c.message && !c.reply;
+                return (
+                  <div key={c.rowIndex} className={styles.connectionRow}>
+                    <div className={styles.connectionMain}>
+                      <span className={styles.connectionName}>{c.fullName}</span>
+                      {c.company && <span className={styles.connectionCompany}>{c.company}</span>}
+                    </div>
+                    <div className={styles.connectionMeta}>
+                      {c.reply ? (
+                        <span className={`${styles.replyBadge} ${c.reply.toLowerCase() === 'interested' ? styles.replyInterested : styles.replyOther}`}>
+                          {c.reply}
+                        </span>
+                      ) : isOverdue ? (
+                        <span className={styles.overdueBadge}>overdue</span>
+                      ) : c.lastContacted ? (
+                        <span className={styles.connectionDate}>{c.lastContacted}</span>
+                      ) : (
+                        <span className={styles.connectionNew}>new</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        ) : tab === 'messages' ? (
           <div className={styles.messagesList}>
             {!data ? null : data.messages.map((msg, i) => (
               <div key={i} className={styles.messageItem}>
