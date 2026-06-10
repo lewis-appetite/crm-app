@@ -39,20 +39,20 @@ const COL = {
   URL: 2,
   COMPANY: 3,
   POSITION: 4,
-  FUNCTION: 5,
-  CONNECTED_ON: 6,
-  MESSAGE: 7,
-  REPLY: 8,
-  FOLLOW_UPS: 9,
-  FOLLOW_UP_MESSAGE_1: 10,
-  LAST_CONTACTED: 11,
-  COMMENT: 12,
+  FUNCTION: 6,
+  CONNECTED_ON: 7,
+  MESSAGE: 8,
+  REPLY: 9,
+  FOLLOW_UPS: 10,
+  FOLLOW_UP_MESSAGE_1: 11,
+  LAST_CONTACTED: 12,
+  COMMENT: 13,
 };
 
 // Column letters for Sheets API updates (1-based column letters)
 export const SHEET_COLS = {
-  REPLY: 'I',       // col 9
-  LAST_CONTACTED: 'L', // col 12
+  REPLY: 'J',       // col 9 (0-based) = J
+  LAST_CONTACTED: 'M', // col 12 (0-based) = M
 };
 
 export function parseConnections(rows: string[][]): Contact[] {
