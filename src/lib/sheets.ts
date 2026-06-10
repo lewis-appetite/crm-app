@@ -93,23 +93,22 @@ export function isDead(contact: Contact): boolean {
 
 export function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
-  // Handle various formats: DD-Mon-YY, DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD
   const cleaned = dateStr.trim();
 
-  // Try standard JS parse first
-  const d = new Date(cleaned);
-  if (!isNaN(d.getTime())) return d;
-
-  // Try DD/MM/YYYY or D/M/YYYY
-  const parts = cleaned.split('/');
-  if (parts.length === 3) {
-    const day = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1;
-    const year = parseInt(parts[2]);
+  // DD/MM/YYYY or D/M/YYYY (sheet format) — must come before JS Date() which assumes MM/DD
+  const slashParts = cleaned.split('/');
+  if (slashParts.length === 3) {
+    const day = parseInt(slashParts[0]);
+    const month = parseInt(slashParts[1]) - 1;
+    const year = parseInt(slashParts[2]);
     const fullYear = year < 100 ? 2000 + year : year;
     const attempt = new Date(fullYear, month, day);
     if (!isNaN(attempt.getTime())) return attempt;
   }
+
+  // YYYY-MM-DD (ISO format)
+  const d = new Date(cleaned);
+  if (!isNaN(d.getTime())) return d;
 
   return null;
 }
