@@ -21,6 +21,9 @@ export default function OutreachApp() {
   const [tab, setTab] = useState<Tab>('followup');
   const [index, setIndex] = useState(0);
   const [search, setSearch] = useState('');
+  const [filterList, setFilterList] = useState('');
+  const [filterFunction, setFilterFunction] = useState('');
+  const [filterReply, setFilterReply] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
   const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,33 +206,62 @@ export default function OutreachApp() {
 
       {/* Main content */}
       <main className={styles.main}>
-        {tab === 'connections' ? (
-          <div className={styles.connectionsList}>
-            <input
-              className={styles.searchInput}
-              type="search"
-              placeholder="Search name, company, position…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-            {(data?.allContacts ?? [])
-              .filter(c => {
-                if (!search.trim()) return true;
-                const q = search.toLowerCase();
-                return (
-                  c.fullName.toLowerCase().includes(q) ||
-                  c.company.toLowerCase().includes(q) ||
-                  c.position.toLowerCase().includes(q)
-                );
-              })
-              .map(c => {
+        {tab === 'connections' ? (() => {
+          const allContacts = data?.allContacts ?? [];
+          const lists = Array.from(new Set(allContacts.map(c => c.list).filter(Boolean))).sort();
+          const functions = Array.from(new Set(allContacts.map(c => c.function).filter(Boolean))).sort();
+          const replies = Array.from(new Set(allContacts.map(c => c.reply).filter(Boolean))).sort();
+
+          const filtered = allContacts.filter(c => {
+            if (filterList && c.list !== filterList) return false;
+            if (filterFunction && c.function !== filterFunction) return false;
+            if (filterReply && c.reply !== filterReply) return false;
+            if (search.trim()) {
+              const q = search.toLowerCase();
+              if (
+                !c.fullName.toLowerCase().includes(q) &&
+                !c.company.toLowerCase().includes(q) &&
+                !c.position.toLowerCase().includes(q)
+              ) return false;
+            }
+            return true;
+          });
+
+          return (
+            <div className={styles.connectionsList}>
+              <input
+                className={styles.searchInput}
+                type="search"
+                placeholder="Search name, company, position…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <div className={styles.filterRow}>
+                <select className={styles.filterSelect} value={filterList} onChange={e => setFilterList(e.target.value)}>
+                  <option value="">All lists</option>
+                  {lists.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <select className={styles.filterSelect} value={filterFunction} onChange={e => setFilterFunction(e.target.value)}>
+                  <option value="">All functions</option>
+                  {functions.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                <select className={styles.filterSelect} value={filterReply} onChange={e => setFilterReply(e.target.value)}>
+                  <option value="">All replies</option>
+                  {replies.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className={styles.filterCount}>{filtered.length} contact{filtered.length !== 1 ? 's' : ''}</div>
+              {filtered.map(c => {
                 const days = daysAgo(c.lastContacted);
                 const isOverdue = days !== null && days >= intervalDays && !!c.message && !c.reply;
                 return (
                   <div key={c.rowIndex} className={styles.connectionRow}>
                     <div className={styles.connectionMain}>
                       <span className={styles.connectionName}>{c.fullName}</span>
-                      {c.company && <span className={styles.connectionCompany}>{c.company}</span>}
+                      <span className={styles.connectionCompany}>
+                        {[c.position, c.company].filter(Boolean).join(' · ')}
+                      </span>
+                      {c.list && <span className={styles.connectionList}>{c.list}</span>}
                     </div>
                     <div className={styles.connectionMeta}>
                       {c.reply ? (
@@ -247,8 +279,9 @@ export default function OutreachApp() {
                   </div>
                 );
               })}
-          </div>
-        ) : tab === 'messages' ? (
+            </div>
+          );
+        })() : tab === 'messages' ? (
           <div className={styles.messagesList}>
             {!data ? null : data.messages.map((msg, i) => (
               <div key={i} className={styles.messageItem}>

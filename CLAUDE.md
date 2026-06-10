@@ -23,7 +23,7 @@ Two Google Sheets tabs:
 | 2 | C | LinkedIn URL |
 | 3 | D | Company |
 | 4 | E | Position |
-| 5 | F | *(blank)* |
+| 5 | F | List |
 | 6 | G | Function |
 | 7 | H | Connected On |
 | 8 | I | Message (abbreviation of initial message sent) |

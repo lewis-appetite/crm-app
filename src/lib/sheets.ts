@@ -7,6 +7,7 @@ export interface Contact {
   url: string;
   company: string;
   position: string;
+  list: string;
   function: string;
   connectedOn: string;
   message: string;
@@ -39,6 +40,7 @@ const COL = {
   URL: 2,
   COMPANY: 3,
   POSITION: 4,
+  LIST: 5,
   FUNCTION: 6,
   CONNECTED_ON: 7,
   MESSAGE: 8,
@@ -65,6 +67,7 @@ export function parseConnections(rows: string[][]): Contact[] {
     url: (row[COL.URL] || '').trim(),
     company: (row[COL.COMPANY] || '').trim(),
     position: (row[COL.POSITION] || '').trim(),
+    list: (row[COL.LIST] || '').trim(),
     function: (row[COL.FUNCTION] || '').trim(),
     connectedOn: (row[COL.CONNECTED_ON] || '').trim(),
     message: (row[COL.MESSAGE] || '').trim(),

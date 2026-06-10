@@ -557,6 +557,46 @@
   color: var(--text-dim);
 }
 
+.filterRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.filterSelect {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.filterSelect:focus {
+  border-color: var(--accent);
+}
+
+.filterCount {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 0 8px;
+  text-align: right;
+}
+
+.connectionList {
+  font-size: 10px;
+  color: var(--accent);
+  font-family: 'DM Mono', monospace;
+  margin-top: 1px;
+}
+
 .connectionRow {
   display: flex;
   align-items: center;
