@@ -23,14 +23,15 @@ Two Google Sheets tabs:
 | 2 | C | LinkedIn URL |
 | 3 | D | Company |
 | 4 | E | Position |
-| 5 | F | Function |
-| 6 | G | Connected On |
-| 7 | H | Message (abbreviation of initial message sent) |
-| 8 | I | Reply (status: "Interested", "Dead lead", "Not interested", etc.) |
-| 9 | J | Follow Ups (count?) |
-| 10 | K | Follow Up Message 1 (abbreviation of follow-up template used) |
-| 11 | L | Last Contacted (date) |
-| 12 | M | Comment |
+| 5 | F | *(blank)* |
+| 6 | G | Function |
+| 7 | H | Connected On |
+| 8 | I | Message (abbreviation of initial message sent) |
+| 9 | J | Reply (status: "Interested", "Dead lead", "Not interested", etc.) |
+| 10 | K | Follow Ups (count) |
+| 11 | L | Follow Up Message 1 (abbreviation of follow-up template used) |
+| 12 | M | Last Contacted (date, DD/MM/YYYY) |
+| 13 | N | Comment |
 
 ### Messages tab (one row per template)
 | Col | Field |
