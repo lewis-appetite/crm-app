@@ -597,16 +597,20 @@
   margin-top: 1px;
 }
 
+.connectionItem {
+  border-bottom: 1px solid var(--border);
+}
+.connectionItem:last-child {
+  border-bottom: none;
+}
+
 .connectionRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.connectionRow:last-child {
-  border-bottom: none;
+  cursor: pointer;
 }
 
 .connectionMain {
@@ -636,6 +640,9 @@
 
 .connectionMeta {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .connectionDate {
@@ -682,4 +689,163 @@
   background: var(--surface2);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
+}
+
+/* Expand icon on connection row */
+.expandIcon {
+  color: var(--text-dim);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.expandIconOpen {
+  transform: rotate(180deg);
+}
+
+/* Inline edit form */
+.editForm {
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface2);
+}
+
+.editField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editLabel {
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.editInput {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.editInput:focus {
+  border-color: var(--accent);
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.editCancelBtn {
+  flex: 1;
+  padding: 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.editSaveBtn {
+  flex: 2;
+  padding: 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(232, 213, 176, 0.25);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+.editSaveBtn:disabled {
+  opacity: 0.5;
+}
+
+/* Queue controls (sort + filter for New Contacts) */
+.queueControls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sortSelect {
+  flex: 2;
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.sortSelect:focus {
+  border-color: var(--accent);
+}
+
+/* Message picker on contact card */
+.msgPickerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.msgPickerLabel {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.msgPickerSelect {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.msgPickerSelect:focus {
+  border-color: var(--accent);
+}
+
+.secondFollowUpNote {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* Messages tab stats row */
+.messageItemRight {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.messageSentRow {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 0 2px 2px;
 }

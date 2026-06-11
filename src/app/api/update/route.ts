@@ -5,49 +5,27 @@ const API_KEY = process.env.GOOGLE_SHEETS_API_KEY!;
 
 interface UpdatePayload {
   rowIndex: number;
-  action: 'contacted' | 'dead' | 'visited';
-  date: string;
+  cells: { col: string; value: string }[];
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body: UpdatePayload = await req.json();
-    const { rowIndex, action, date } = body;
+    const { rowIndex, cells }: UpdatePayload = await req.json();
 
-    const updates: { range: string; values: string[][] }[] = [];
-
-    if (action === 'contacted') {
-      // Update Last Contacted (col L = index 12)
-      updates.push({
-        range: `Connections!L${rowIndex}`,
-        values: [[date]],
-      });
-    } else if (action === 'dead') {
-      // Update Reply? col (col I = index 9) to "Dead lead"
-      updates.push({
-        range: `Connections!I${rowIndex}`,
-        values: [['Dead lead']],
-      });
-    } else if (action === 'visited') {
-      // Just update Last Contacted when LinkedIn link is tapped
-      updates.push({
-        range: `Connections!L${rowIndex}`,
-        values: [[date]],
-      });
-    }
-
-    if (updates.length === 0) {
+    if (!cells || cells.length === 0) {
       return NextResponse.json({ ok: true });
     }
+
+    const data = cells.map(({ col, value }) => ({
+      range: `Connections!${col}${rowIndex}`,
+      values: [[value]],
+    }));
 
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate?key=${API_KEY}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        valueInputOption: 'USER_ENTERED',
-        data: updates,
-      }),
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }),
     });
 
     if (!res.ok) {

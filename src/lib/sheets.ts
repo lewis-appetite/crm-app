@@ -88,10 +88,14 @@ export function parseMessages(rows: string[][]): Message[] {
   }));
 }
 
-const DEAD_STATUSES = ['dead lead', 'not interested', 'blocked', 'gone cold'];
+export const POSITIVE_REPLIES = ['interested', 'yes', 'referred'];
+
+// Replies that still warrant a follow-up, in priority order
+const FOLLOW_UP_WORTHY = ['interested', 'yes', '', 'referred'];
+const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2, referred: 3 };
 
 export function isDead(contact: Contact): boolean {
-  return DEAD_STATUSES.includes(contact.reply.toLowerCase());
+  return !FOLLOW_UP_WORTHY.includes(contact.reply.toLowerCase());
 }
 
 export function parseDate(dateStr: string): Date | null {
@@ -128,18 +132,21 @@ export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Con
   return contacts
     .filter(c => {
       if (!c.message) return false;
-      if (isDead(c)) return false;
-      if (c.reply.toLowerCase() === 'interested') return false;
+      if (!FOLLOW_UP_WORTHY.includes(c.reply.toLowerCase())) return false;
       const days = daysAgo(c.lastContacted);
       if (days === null) return false;
       return days >= intervalDays;
     })
     .sort((a, b) => {
+      // Sort by reply priority first (Interested → Yes → Blank → Referred)
+      const aPri = REPLY_PRIORITY[a.reply.toLowerCase()] ?? 2;
+      const bPri = REPLY_PRIORITY[b.reply.toLowerCase()] ?? 2;
+      if (aPri !== bPri) return aPri - bPri;
+      // Within priority: no follow-up sent yet floats to top
       const aHasFollowUp = !!a.followUpMessage1;
       const bHasFollowUp = !!b.followUpMessage1;
-      // No follow-up sent yet floats to top
       if (aHasFollowUp !== bHasFollowUp) return aHasFollowUp ? 1 : -1;
-      // Within each group, oldest last contacted first
+      // Then oldest last contacted first
       const da = parseDate(a.lastContacted);
       const db = parseDate(b.lastContacted);
       if (!da || !db) return 0;
@@ -179,7 +186,7 @@ export function suggestMessage(
 
     if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
     stats[abbr].sent++;
-    if (c.reply.toLowerCase() === 'interested') stats[abbr].replied++;
+    if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) stats[abbr].replied++;
   });
 
   // Find best performing template for similar roles
@@ -220,6 +227,48 @@ function personalise(template: string, contact: Contact): string {
     .replace(/COMPANY NAME/gi, contact.company || 'your company')
     .replace(/COMPANY/gi, contact.company || 'your company')
     .replace(/XX/gi, contact.position || 'professional');
+}
+
+export interface MessageStats {
+  abbreviation: string;
+  sent: number;
+  replied: number;
+  replyRate: number | null;
+}
+
+export function getMessageStats(contacts: Contact[], messages: Message[]): MessageStats[] {
+  const stats: Record<string, { sent: number; replied: number }> = {};
+
+  contacts.forEach(c => {
+    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
+    if (c.message) {
+      if (!stats[c.message]) stats[c.message] = { sent: 0, replied: 0 };
+      stats[c.message].sent++;
+      if (isPositive) stats[c.message].replied++;
+    }
+    if (c.followUpMessage1) {
+      if (!stats[c.followUpMessage1]) stats[c.followUpMessage1] = { sent: 0, replied: 0 };
+      stats[c.followUpMessage1].sent++;
+      if (isPositive) stats[c.followUpMessage1].replied++;
+    }
+  });
+
+  return messages.map(m => {
+    const s = stats[m.abbreviation];
+    return {
+      abbreviation: m.abbreviation,
+      sent: s?.sent ?? 0,
+      replied: s?.replied ?? 0,
+      replyRate: s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
+    };
+  });
+}
+
+export function todayDMY(): string {
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${d.getFullYear()}`;
 }
 
 export function todayISO(): string {

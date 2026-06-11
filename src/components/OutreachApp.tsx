@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Contact, Message, SuggestedMessage, suggestMessage, daysAgo, todayISO } from '@/lib/sheets';
+import {
+  Contact, Message, SuggestedMessage,
+  suggestMessage, daysAgo, parseDate, todayDMY,
+  getMessageStats, MessageStats, POSITIVE_REPLIES,
+} from '@/lib/sheets';
 import styles from './OutreachApp.module.css';
 
 interface SheetData {
@@ -13,6 +17,9 @@ interface SheetData {
 }
 
 type Tab = 'followup' | 'new' | 'messages' | 'connections';
+type NewSort = 'recent' | 'oldest' | 'az';
+
+const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Not interested', 'Blocked', 'Gone cold'];
 
 export default function OutreachApp() {
   const [data, setData] = useState<SheetData | null>(null);
@@ -20,10 +27,26 @@ export default function OutreachApp() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('followup');
   const [index, setIndex] = useState(0);
+
+  // Connections tab filters
   const [search, setSearch] = useState('');
   const [filterList, setFilterList] = useState('');
   const [filterFunction, setFilterFunction] = useState('');
   const [filterReply, setFilterReply] = useState('');
+
+  // New contacts sort + filter
+  const [newSort, setNewSort] = useState<NewSort>('recent');
+  const [newFilterList, setNewFilterList] = useState('');
+  const [newFilterFunction, setNewFilterFunction] = useState('');
+
+  // Message picker on contact card
+  const [selectedMessage, setSelectedMessage] = useState('');
+
+  // All tab inline edit
+  const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [saveLoading, setSaveLoading] = useState(false);
+
   const [copied, setCopied] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
   const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,14 +73,34 @@ export default function OutreachApp() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Reset copied state whenever the visible contact changes
   useEffect(() => {
     setCopied(false);
+    setSelectedMessage('');
     if (copyTimeout.current) clearTimeout(copyTimeout.current);
   }, [index, tab, dismissed]);
 
+  // Sorted + filtered new contacts queue
+  const sortedNewContacts = (() => {
+    if (!data) return [];
+    return data.newContacts
+      .filter(c => {
+        if (newFilterList && c.list !== newFilterList) return false;
+        if (newFilterFunction && c.function !== newFilterFunction) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        if (newSort === 'az') return a.fullName.localeCompare(b.fullName);
+        const da = parseDate(a.connectedOn);
+        const db = parseDate(b.connectedOn);
+        if (!da || !db) return 0;
+        return newSort === 'recent'
+          ? db.getTime() - da.getTime()
+          : da.getTime() - db.getTime();
+      });
+  })();
+
   const queue = data
-    ? (tab === 'followup' ? data.followUps : data.newContacts).filter(
+    ? (tab === 'followup' ? data.followUps : sortedNewContacts).filter(
         c => !dismissed.has(c.rowIndex)
       )
     : [];
@@ -70,32 +113,53 @@ export default function OutreachApp() {
       ? suggestMessage(contact, data.allContacts, data.messages, tab === 'followup')
       : null;
 
-  async function updateSheet(rowIndex: number, action: 'contacted' | 'dead' | 'visited') {
+  const isSecondFollowUp = tab === 'followup' && !!contact?.followUpMessage1;
+
+  const messageOptions = data?.messages.filter(m =>
+    tab === 'new'
+      ? m.messageType === 'Initial Outreach'
+      : m.messageType === 'Follow Up'
+  ) ?? [];
+
+  async function updateSheet(rowIndex: number, cells: { col: string; value: string }[]) {
     try {
       await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rowIndex, action, date: todayISO() }),
+        body: JSON.stringify({ rowIndex, cells }),
       });
     } catch {
       // silent fail — UI already updated optimistically
     }
   }
 
-  function handleLinkedIn(contact: Contact) {
-    if (!contact.url) return;
-    updateSheet(contact.rowIndex, 'visited');
-    window.open(contact.url, '_blank');
+  function handleLinkedIn(c: Contact) {
+    if (!c.url) return;
+    updateSheet(c.rowIndex, [{ col: 'M', value: todayDMY() }]);
+    window.open(c.url, '_blank');
   }
 
   async function handleAction(action: 'contacted' | 'dead') {
     if (!contact || actionLoading) return;
     setActionLoading(true);
-    await updateSheet(contact.rowIndex, action);
+
+    const cells: { col: string; value: string }[] = [];
+
+    if (action === 'contacted') {
+      if (selectedMessage && !isSecondFollowUp) {
+        if (tab === 'new') cells.push({ col: 'I', value: selectedMessage });
+        else cells.push({ col: 'L', value: selectedMessage });
+      }
+      cells.push({ col: 'M', value: todayDMY() });
+    } else {
+      cells.push({ col: 'J', value: 'Dead lead' });
+    }
+
+    await updateSheet(contact.rowIndex, cells);
     setDismissed(prev => new Set(prev).add(contact.rowIndex));
-    // Move to next, or stay at current index if queue shrinks
     const newQueue = queue.filter(c => c.rowIndex !== contact.rowIndex);
     setIndex(i => Math.min(i, Math.max(0, newQueue.length - 1)));
+    setSelectedMessage('');
     setActionLoading(false);
   }
 
@@ -119,6 +183,61 @@ export default function OutreachApp() {
   function handleTabSwitch(t: Tab) {
     setTab(t);
     setIndex(0);
+    setEditingRowIndex(null);
+  }
+
+  function openEdit(c: Contact) {
+    setEditingRowIndex(c.rowIndex);
+    setEditValues({
+      list: c.list,
+      function: c.function,
+      message: c.message,
+      reply: c.reply,
+      followUpMessage1: c.followUpMessage1,
+      lastContacted: c.lastContacted,
+      comment: c.comment,
+    });
+  }
+
+  async function saveEdit() {
+    if (editingRowIndex === null || saveLoading) return;
+    setSaveLoading(true);
+
+    const fieldCols: Record<string, string> = {
+      list: 'F', function: 'G', message: 'I', reply: 'J',
+      followUpMessage1: 'L', lastContacted: 'M', comment: 'N',
+    };
+
+    const cells = Object.entries(editValues).map(([field, value]) => ({
+      col: fieldCols[field],
+      value,
+    }));
+
+    await updateSheet(editingRowIndex, cells);
+
+    setData(prev => {
+      if (!prev) return prev;
+      const updateContact = (c: Contact) =>
+        c.rowIndex !== editingRowIndex ? c : {
+          ...c,
+          list: editValues.list,
+          function: editValues.function,
+          message: editValues.message,
+          reply: editValues.reply,
+          followUpMessage1: editValues.followUpMessage1,
+          lastContacted: editValues.lastContacted,
+          comment: editValues.comment,
+        };
+      return {
+        ...prev,
+        allContacts: prev.allContacts.map(updateContact),
+        followUps: prev.followUps.map(updateContact),
+        newContacts: prev.newContacts.map(updateContact),
+      };
+    });
+
+    setEditingRowIndex(null);
+    setSaveLoading(false);
   }
 
   const days = contact ? daysAgo(contact.lastContacted) : null;
@@ -168,44 +287,28 @@ export default function OutreachApp() {
           </button>
         </div>
         <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${tab === 'followup' ? styles.tabActive : ''}`}
-            onClick={() => handleTabSwitch('followup')}
-          >
+          <button className={`${styles.tab} ${tab === 'followup' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('followup')}>
             Follow-ups
-            <span className={styles.tabCount}>
-              {data ? data.followUps.filter(c => !dismissed.has(c.rowIndex)).length : 0}
-            </span>
+            <span className={styles.tabCount}>{data ? data.followUps.filter(c => !dismissed.has(c.rowIndex)).length : 0}</span>
           </button>
-          <button
-            className={`${styles.tab} ${tab === 'new' ? styles.tabActive : ''}`}
-            onClick={() => handleTabSwitch('new')}
-          >
-            New contacts
-            <span className={styles.tabCount}>
-              {data ? data.newContacts.filter(c => !dismissed.has(c.rowIndex)).length : 0}
-            </span>
+          <button className={`${styles.tab} ${tab === 'new' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('new')}>
+            New
+            <span className={styles.tabCount}>{data ? sortedNewContacts.filter(c => !dismissed.has(c.rowIndex)).length : 0}</span>
           </button>
-          <button
-            className={`${styles.tab} ${tab === 'messages' ? styles.tabActive : ''}`}
-            onClick={() => handleTabSwitch('messages')}
-          >
+          <button className={`${styles.tab} ${tab === 'messages' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('messages')}>
             Messages
           </button>
-          <button
-            className={`${styles.tab} ${tab === 'connections' ? styles.tabActive : ''}`}
-            onClick={() => handleTabSwitch('connections')}
-          >
+          <button className={`${styles.tab} ${tab === 'connections' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('connections')}>
             All
-            <span className={styles.tabCount}>
-              {data ? data.allContacts.length : 0}
-            </span>
+            <span className={styles.tabCount}>{data ? data.allContacts.length : 0}</span>
           </button>
         </div>
       </header>
 
       {/* Main content */}
       <main className={styles.main}>
+
+        {/* ── ALL CONTACTS TAB ── */}
         {tab === 'connections' ? (() => {
           const allContacts = data?.allContacts ?? [];
           const lists = Array.from(new Set(allContacts.map(c => c.list).filter(Boolean))).sort();
@@ -218,24 +321,16 @@ export default function OutreachApp() {
             if (filterReply && c.reply !== filterReply) return false;
             if (search.trim()) {
               const q = search.toLowerCase();
-              if (
-                !c.fullName.toLowerCase().includes(q) &&
-                !c.company.toLowerCase().includes(q) &&
-                !c.position.toLowerCase().includes(q)
-              ) return false;
+              if (!c.fullName.toLowerCase().includes(q) && !c.company.toLowerCase().includes(q) && !c.position.toLowerCase().includes(q)) return false;
             }
             return true;
           });
 
+          const msgAbbrs = data?.messages.map(m => m.abbreviation) ?? [];
+
           return (
             <div className={styles.connectionsList}>
-              <input
-                className={styles.searchInput}
-                type="search"
-                placeholder="Search name, company, position…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+              <input className={styles.searchInput} type="search" placeholder="Search name, company, position…" value={search} onChange={e => setSearch(e.target.value)} />
               <div className={styles.filterRow}>
                 <select className={styles.filterSelect} value={filterList} onChange={e => setFilterList(e.target.value)}>
                   <option value="">All lists</option>
@@ -252,81 +347,196 @@ export default function OutreachApp() {
               </div>
               <div className={styles.filterCount}>{filtered.length} contact{filtered.length !== 1 ? 's' : ''}</div>
               {filtered.map(c => {
-                const days = daysAgo(c.lastContacted);
-                const isOverdue = days !== null && days >= intervalDays && !!c.message && !c.reply;
+                const isEditing = editingRowIndex === c.rowIndex;
+                const cDays = daysAgo(c.lastContacted);
+                const isOverdue = cDays !== null && cDays >= intervalDays && !!c.message && !c.reply;
                 return (
-                  <div key={c.rowIndex} className={styles.connectionRow}>
-                    <div className={styles.connectionMain}>
-                      <span className={styles.connectionName}>{c.fullName}</span>
-                      <span className={styles.connectionCompany}>
-                        {[c.position, c.company].filter(Boolean).join(' · ')}
-                      </span>
-                      {c.list && <span className={styles.connectionList}>{c.list}</span>}
+                  <div key={c.rowIndex} className={styles.connectionItem}>
+                    <div className={styles.connectionRow} onClick={() => isEditing ? setEditingRowIndex(null) : openEdit(c)}>
+                      <div className={styles.connectionMain}>
+                        <span className={styles.connectionName}>{c.fullName}</span>
+                        <span className={styles.connectionCompany}>{[c.position, c.company].filter(Boolean).join(' · ')}</span>
+                        {c.list && <span className={styles.connectionList}>{c.list}</span>}
+                      </div>
+                      <div className={styles.connectionMeta}>
+                        {c.reply ? (
+                          <span className={`${styles.replyBadge} ${POSITIVE_REPLIES.includes(c.reply.toLowerCase()) ? styles.replyInterested : styles.replyOther}`}>
+                            {c.reply}
+                          </span>
+                        ) : isOverdue ? (
+                          <span className={styles.overdueBadge}>overdue</span>
+                        ) : c.lastContacted ? (
+                          <span className={styles.connectionDate}>{c.lastContacted}</span>
+                        ) : (
+                          <span className={styles.connectionNew}>new</span>
+                        )}
+                        <svg className={`${styles.expandIcon} ${isEditing ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </div>
                     </div>
-                    <div className={styles.connectionMeta}>
-                      {c.reply ? (
-                        <span className={`${styles.replyBadge} ${c.reply.toLowerCase() === 'interested' ? styles.replyInterested : styles.replyOther}`}>
-                          {c.reply}
-                        </span>
-                      ) : isOverdue ? (
-                        <span className={styles.overdueBadge}>overdue</span>
-                      ) : c.lastContacted ? (
-                        <span className={styles.connectionDate}>{c.lastContacted}</span>
-                      ) : (
-                        <span className={styles.connectionNew}>new</span>
-                      )}
-                    </div>
+                    {isEditing && (
+                      <div className={styles.editForm}>
+                        {[
+                          { key: 'list', label: 'List' },
+                          { key: 'function', label: 'Function' },
+                          { key: 'lastContacted', label: 'Last Contacted' },
+                          { key: 'comment', label: 'Comment' },
+                        ].map(({ key, label }) => (
+                          <div key={key} className={styles.editField}>
+                            <label className={styles.editLabel}>{label}</label>
+                            <input
+                              className={styles.editInput}
+                              value={editValues[key] ?? ''}
+                              onChange={e => setEditValues(v => ({ ...v, [key]: e.target.value }))}
+                            />
+                          </div>
+                        ))}
+                        <div className={styles.editField}>
+                          <label className={styles.editLabel}>Reply</label>
+                          <select className={styles.editInput} value={editValues.reply ?? ''} onChange={e => setEditValues(v => ({ ...v, reply: e.target.value }))}>
+                            {REPLY_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
+                          </select>
+                        </div>
+                        <div className={styles.editField}>
+                          <label className={styles.editLabel}>Message</label>
+                          <select className={styles.editInput} value={editValues.message ?? ''} onChange={e => setEditValues(v => ({ ...v, message: e.target.value }))}>
+                            <option value="">—</option>
+                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </div>
+                        <div className={styles.editField}>
+                          <label className={styles.editLabel}>Follow Up 1</label>
+                          <select className={styles.editInput} value={editValues.followUpMessage1 ?? ''} onChange={e => setEditValues(v => ({ ...v, followUpMessage1: e.target.value }))}>
+                            <option value="">—</option>
+                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </div>
+                        <div className={styles.editActions}>
+                          <button className={styles.editCancelBtn} onClick={() => setEditingRowIndex(null)}>Cancel</button>
+                          <button className={styles.editSaveBtn} onClick={saveEdit} disabled={saveLoading}>
+                            {saveLoading ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           );
-        })() : tab === 'messages' ? (
-          <div className={styles.messagesList}>
-            {!data ? null : data.messages.map((msg, i) => (
-              <div key={i} className={styles.messageItem}>
-                <div className={styles.messageItemHeader}>
-                  <div className={styles.messageItemMeta}>
-                    <span className={styles.messageTypeBadge}>{msg.messageType}</span>
-                    <span className={styles.messageTarget}>{msg.target}</span>
+        })()
+
+        /* ── MESSAGES TAB ── */
+        : tab === 'messages' ? (() => {
+          const stats: MessageStats[] = data ? getMessageStats(data.allContacts, data.messages) : [];
+          const statsMap = Object.fromEntries(stats.map(s => [s.abbreviation, s]));
+          return (
+            <div className={styles.messagesList}>
+              {(data?.messages ?? []).map((msg, i) => {
+                const s = statsMap[msg.abbreviation];
+                return (
+                  <div key={i} className={styles.messageItem}>
+                    <div className={styles.messageItemHeader}>
+                      <div className={styles.messageItemMeta}>
+                        <span className={styles.messageTypeBadge}>{msg.messageType}</span>
+                        <span className={styles.messageTarget}>{msg.target}</span>
+                      </div>
+                      <div className={styles.messageItemRight}>
+                        {s?.replyRate !== null && s?.replyRate !== undefined && (
+                          <span className={styles.ratePill}>{s.replyRate}%</span>
+                        )}
+                        <span className={styles.messageAbbr}>{msg.abbreviation}</span>
+                      </div>
+                    </div>
+                    {s && s.sent > 0 && (
+                      <div className={styles.messageSentRow}>
+                        {s.replied} positive / {s.sent} sent
+                      </div>
+                    )}
+                    <p className={styles.messageItemBody}>{msg.fullMessage}</p>
+                    <button
+                      className={`${styles.copyBtn} ${copiedMsg === msg.abbreviation ? styles.copyBtnDone : ''}`}
+                      onClick={() => handleCopyMessage(msg.fullMessage, msg.abbreviation)}
+                    >
+                      {copiedMsg === msg.abbreviation ? (
+                        <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
+                      ) : (
+                        <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</>
+                      )}
+                    </button>
                   </div>
-                  <span className={styles.messageAbbr}>{msg.abbreviation}</span>
-                </div>
-                <p className={styles.messageItemBody}>{msg.fullMessage}</p>
-                <button
-                  className={`${styles.copyBtn} ${copiedMsg === msg.abbreviation ? styles.copyBtnDone : ''}`}
-                  onClick={() => handleCopyMessage(msg.fullMessage, msg.abbreviation)}
-                >
-                  {copiedMsg === msg.abbreviation ? (
+                );
+              })}
+            </div>
+          );
+        })()
+
+        /* ── FOLLOW-UPS / NEW CONTACTS TABS ── */
+        : queue.length === 0 ? (
+          <>
+            {tab === 'new' && (
+              <div className={styles.queueControls}>
+                <select className={styles.sortSelect} value={newSort} onChange={e => { setNewSort(e.target.value as NewSort); setIndex(0); }}>
+                  <option value="recent">Recently connected</option>
+                  <option value="oldest">Oldest connected</option>
+                  <option value="az">A – Z</option>
+                </select>
+                {data && (() => {
+                  const newLists = Array.from(new Set(data.newContacts.map(c => c.list).filter(Boolean))).sort();
+                  const newFunctions = Array.from(new Set(data.newContacts.map(c => c.function).filter(Boolean))).sort();
+                  return (
                     <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                      Copied
+                      <select className={styles.filterSelect} value={newFilterList} onChange={e => { setNewFilterList(e.target.value); setIndex(0); }}>
+                        <option value="">All lists</option>
+                        {newLists.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                      <select className={styles.filterSelect} value={newFilterFunction} onChange={e => { setNewFilterFunction(e.target.value); setIndex(0); }}>
+                        <option value="">All functions</option>
+                        {newFunctions.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
                     </>
-                  ) : (
-                    <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                      </svg>
-                      Copy
-                    </>
-                  )}
-                </button>
+                  );
+                })()}
               </div>
-            ))}
-          </div>
-        ) : queue.length === 0 ? (
-          <div className={styles.emptyState}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-              <polyline points="22 4 12 14.01 9 11.01"/>
-            </svg>
-            <p>Queue is clear</p>
-          </div>
+            )}
+            <div className={styles.emptyState}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              <p>Queue is clear</p>
+            </div>
+          </>
         ) : (
           <>
+            {/* Sort/filter bar for New Contacts */}
+            {tab === 'new' && (
+              <div className={styles.queueControls}>
+                <select className={styles.sortSelect} value={newSort} onChange={e => { setNewSort(e.target.value as NewSort); setIndex(0); }}>
+                  <option value="recent">Recently connected</option>
+                  <option value="oldest">Oldest connected</option>
+                  <option value="az">A – Z</option>
+                </select>
+                {data && (() => {
+                  const newLists = Array.from(new Set(data.newContacts.map(c => c.list).filter(Boolean))).sort();
+                  const newFunctions = Array.from(new Set(data.newContacts.map(c => c.function).filter(Boolean))).sort();
+                  return (
+                    <>
+                      <select className={styles.filterSelect} value={newFilterList} onChange={e => { setNewFilterList(e.target.value); setIndex(0); }}>
+                        <option value="">All lists</option>
+                        {newLists.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                      <select className={styles.filterSelect} value={newFilterFunction} onChange={e => { setNewFilterFunction(e.target.value); setIndex(0); }}>
+                        <option value="">All functions</option>
+                        {newFunctions.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Contact card */}
             <div className={styles.card}>
               <div className={styles.cardTop}>
@@ -358,15 +568,29 @@ export default function OutreachApp() {
                     <span className={styles.detailValue}>{contact!.function}</span>
                   </div>
                 )}
-                <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Last contacted</span>
-                  <span className={styles.detailValue}>
-                    {contact!.lastContacted || 'Never'}
-                    {overdueBy !== null && overdueBy > 0 && (
-                      <span className={styles.overdueBadge}>+{overdueBy}d overdue</span>
-                    )}
-                  </span>
-                </div>
+                {contact!.list && (
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>List</span>
+                    <span className={styles.detailValue}>{contact!.list}</span>
+                  </div>
+                )}
+                {tab === 'new' && contact!.connectedOn && (
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>Connected</span>
+                    <span className={styles.detailValue}>{contact!.connectedOn}</span>
+                  </div>
+                )}
+                {tab === 'followup' && (
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>Last contacted</span>
+                    <span className={styles.detailValue}>
+                      {contact!.lastContacted || 'Never'}
+                      {overdueBy !== null && overdueBy > 0 && (
+                        <span className={styles.overdueBadge}>+{overdueBy}d overdue</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 {contact!.reply && (
                   <div className={styles.detailRow}>
                     <span className={styles.detailLabel}>Reply</span>
@@ -400,20 +624,9 @@ export default function OutreachApp() {
                   onClick={handleCopy}
                 >
                   {copied ? (
-                    <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                      Copied
-                    </>
+                    <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
                   ) : (
-                    <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                      </svg>
-                      Copy message
-                    </>
+                    <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy message</>
                   )}
                 </button>
               </div>
@@ -425,28 +638,36 @@ export default function OutreachApp() {
 
             {/* Navigation */}
             <div className={styles.navRow}>
-              <button
-                className={styles.navBtn}
-                onClick={() => setIndex(i => Math.max(0, i - 1))}
-                disabled={safeIndex === 0}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="15 18 9 12 15 6"/>
-                </svg>
+              <button className={styles.navBtn} onClick={() => setIndex(i => Math.max(0, i - 1))} disabled={safeIndex === 0}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                 Prev
               </button>
               <span className={styles.navCount}>{safeIndex + 1} / {queue.length}</span>
-              <button
-                className={styles.navBtn}
-                onClick={() => setIndex(i => Math.min(queue.length - 1, i + 1))}
-                disabled={safeIndex >= queue.length - 1}
-              >
+              <button className={styles.navBtn} onClick={() => setIndex(i => Math.min(queue.length - 1, i + 1))} disabled={safeIndex >= queue.length - 1}>
                 Next
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6"/>
-                </svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
+
+            {/* Message picker */}
+            {!isSecondFollowUp && messageOptions.length > 0 && (
+              <div className={styles.msgPickerRow}>
+                <label className={styles.msgPickerLabel}>Message sent</label>
+                <select
+                  className={styles.msgPickerSelect}
+                  value={selectedMessage}
+                  onChange={e => setSelectedMessage(e.target.value)}
+                >
+                  <option value="">— select —</option>
+                  {messageOptions.map(m => (
+                    <option key={m.abbreviation} value={m.abbreviation}>{m.abbreviation}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {isSecondFollowUp && (
+              <div className={styles.secondFollowUpNote}>Second follow-up — date only will be recorded</div>
+            )}
 
             {/* Actions */}
             <div className={styles.actionRow}>
@@ -455,9 +676,7 @@ export default function OutreachApp() {
                 onClick={() => handleAction('contacted')}
                 disabled={actionLoading}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 Contacted
               </button>
               <button
@@ -465,10 +684,7 @@ export default function OutreachApp() {
                 onClick={() => handleAction('dead')}
                 disabled={actionLoading}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 Dead lead
               </button>
             </div>
