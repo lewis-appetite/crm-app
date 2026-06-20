@@ -30,8 +30,9 @@ Two Google Sheets tabs:
 | 9 | J | Reply (status: "Interested", "Dead lead", "Not interested", etc.) |
 | 10 | K | Follow Ups (count) |
 | 11 | L | Follow Up Message 1 (abbreviation of follow-up template used) |
-| 12 | M | Last Contacted (date, DD/MM/YYYY) |
-| 13 | N | Comment |
+| 12 | M | Follow Up Message 2 (abbreviation of second follow-up template used) |
+| 13 | N | Last Contacted (date, DD/MM/YYYY) |
+| 14 | O | Comment |
 
 ### Messages tab (one row per template)
 | Col | Field |

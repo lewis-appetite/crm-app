@@ -138,7 +138,7 @@ export default function OutreachApp() {
 
   function handleLinkedIn(c: Contact) {
     if (!c.url) return;
-    updateSheet(c.rowIndex, [{ col: 'M', value: todayDMY() }]);
+    updateSheet(c.rowIndex, [{ col: 'N', value: todayDMY() }]);
     window.open(c.url, '_blank');
   }
 
@@ -153,7 +153,7 @@ export default function OutreachApp() {
         if (tab === 'new') cells.push({ col: 'I', value: selectedMessage });
         else cells.push({ col: 'L', value: selectedMessage });
       }
-      cells.push({ col: 'M', value: todayDMY() });
+      cells.push({ col: 'N', value: todayDMY() });
     } else {
       cells.push({ col: 'J', value: 'Dead lead' });
     }
@@ -197,6 +197,7 @@ export default function OutreachApp() {
       message: c.message,
       reply: c.reply,
       followUpMessage1: c.followUpMessage1,
+      followUpMessage2: c.followUpMessage2,
       lastContacted: c.lastContacted,
       comment: c.comment,
     });
@@ -208,7 +209,7 @@ export default function OutreachApp() {
 
     const fieldCols: Record<string, string> = {
       list: 'F', function: 'G', message: 'I', reply: 'J',
-      followUpMessage1: 'L', lastContacted: 'M', comment: 'N',
+      followUpMessage1: 'L', followUpMessage2: 'M', lastContacted: 'N', comment: 'O',
     };
 
     const cells = Object.entries(editValues).map(([field, value]) => ({
@@ -228,6 +229,7 @@ export default function OutreachApp() {
           message: editValues.message,
           reply: editValues.reply,
           followUpMessage1: editValues.followUpMessage1,
+          followUpMessage2: editValues.followUpMessage2,
           lastContacted: editValues.lastContacted,
           comment: editValues.comment,
         };
@@ -411,6 +413,13 @@ export default function OutreachApp() {
                         <div className={styles.editField}>
                           <label className={styles.editLabel}>Follow Up 1</label>
                           <select className={styles.editInput} value={editValues.followUpMessage1 ?? ''} onChange={e => setEditValues(v => ({ ...v, followUpMessage1: e.target.value }))}>
+                            <option value="">—</option>
+                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </div>
+                        <div className={styles.editField}>
+                          <label className={styles.editLabel}>Follow Up 2</label>
+                          <select className={styles.editInput} value={editValues.followUpMessage2 ?? ''} onChange={e => setEditValues(v => ({ ...v, followUpMessage2: e.target.value }))}>
                             <option value="">—</option>
                             {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
                           </select>

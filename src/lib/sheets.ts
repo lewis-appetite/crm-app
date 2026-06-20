@@ -14,6 +14,7 @@ export interface Contact {
   reply: string;
   followUps: string;
   followUpMessage1: string;
+  followUpMessage2: string;
   lastContacted: string;
   comment: string;
 }
@@ -47,14 +48,15 @@ const COL = {
   REPLY: 9,
   FOLLOW_UPS: 10,
   FOLLOW_UP_MESSAGE_1: 11,
-  LAST_CONTACTED: 12,
-  COMMENT: 13,
+  FOLLOW_UP_MESSAGE_2: 12,
+  LAST_CONTACTED: 13,
+  COMMENT: 14,
 };
 
 // Column letters for Sheets API updates (1-based column letters)
 export const SHEET_COLS = {
   REPLY: 'J',       // col 9 (0-based) = J
-  LAST_CONTACTED: 'M', // col 12 (0-based) = M
+  LAST_CONTACTED: 'N', // col 13 (0-based) = N
 };
 
 export function parseConnections(rows: string[][]): Contact[] {
@@ -74,6 +76,7 @@ export function parseConnections(rows: string[][]): Contact[] {
     reply: (row[COL.REPLY] || '').trim(),
     followUps: (row[COL.FOLLOW_UPS] || '').trim(),
     followUpMessage1: (row[COL.FOLLOW_UP_MESSAGE_1] || '').trim(),
+    followUpMessage2: (row[COL.FOLLOW_UP_MESSAGE_2] || '').trim(),
     lastContacted: (row[COL.LAST_CONTACTED] || '').trim(),
     comment: (row[COL.COMMENT] || '').trim(),
   }));
