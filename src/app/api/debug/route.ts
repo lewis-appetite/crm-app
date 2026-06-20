@@ -16,12 +16,13 @@ export async function GET() {
   const rows = await fetchRange('Connections');
   const contacts = parseConnections(rows);
 
-  const sample = contacts
-    .filter(c => c.message && !c.reply)
+  // Contacts with a message + blank reply + a lastContacted date (should be in follow-ups)
+  const withDate = contacts
+    .filter(c => c.message && !c.reply && c.lastContacted)
     .slice(0, 20)
     .map(c => ({
       name: c.fullName,
-      message: c.message,
+      message: c.message.slice(0, 40),
       reply: c.reply,
       lastContacted: c.lastContacted,
       parsedDate: parseDate(c.lastContacted)?.toISOString() ?? null,
@@ -29,5 +30,8 @@ export async function GET() {
       passesInterval: (daysAgo(c.lastContacted) ?? 0) >= INTERVAL,
     }));
 
-  return NextResponse.json({ interval: INTERVAL, sample });
+  // Contacts with a message + blank reply + NO lastContacted (excluded from both queues)
+  const noDate = contacts.filter(c => c.message && !c.reply && !c.lastContacted).length;
+
+  return NextResponse.json({ interval: INTERVAL, withDate, noDateCount: noDate });
 }
