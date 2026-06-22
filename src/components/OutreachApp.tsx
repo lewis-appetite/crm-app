@@ -116,7 +116,10 @@ export default function OutreachApp() {
       ? suggestMessage(contact, data.allContacts, data.messages, tab === 'followup')
       : null;
 
-  const isSecondFollowUp = tab === 'followup' && !!contact?.followUpMessage1;
+  const followUpStage = tab !== 'followup' ? 0
+    : !contact?.followUpMessage1 ? 1
+    : !contact?.followUpMessage2 ? 2
+    : 3;
 
   const messageOptions = data?.messages.filter(m =>
     tab === 'new'
@@ -151,8 +154,8 @@ export default function OutreachApp() {
     if (action === 'contacted') {
       if (selectedMessage) {
         if (tab === 'new') cells.push({ col: 'I', value: selectedMessage });
-        else if (isSecondFollowUp) cells.push({ col: 'M', value: selectedMessage });
-        else cells.push({ col: 'L', value: selectedMessage });
+        else if (followUpStage === 1) cells.push({ col: 'L', value: selectedMessage });
+        else if (followUpStage === 2) cells.push({ col: 'M', value: selectedMessage });
       }
       cells.push({ col: 'N', value: todayDMY() });
     } else {
@@ -715,10 +718,10 @@ export default function OutreachApp() {
             </div>
 
             {/* Message picker */}
-            {messageOptions.length > 0 && (
+            {followUpStage <= 2 && messageOptions.length > 0 && (
               <div className={styles.msgPickerRow}>
                 <label className={styles.msgPickerLabel}>
-                  {isSecondFollowUp ? 'Follow up 2' : 'Message sent'}
+                  {followUpStage === 2 ? 'Follow up 2' : followUpStage === 1 ? 'Follow up 1' : 'Message sent'}
                 </label>
                 <select
                   className={styles.msgPickerSelect}
@@ -731,6 +734,9 @@ export default function OutreachApp() {
                   ))}
                 </select>
               </div>
+            )}
+            {followUpStage === 3 && (
+              <div className={styles.secondFollowUpNote}>3rd follow-up — date only will be recorded</div>
             )}
 
             {/* Actions */}
