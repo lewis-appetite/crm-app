@@ -149,8 +149,9 @@ export default function OutreachApp() {
     const cells: { col: string; value: string }[] = [];
 
     if (action === 'contacted') {
-      if (selectedMessage && !isSecondFollowUp) {
+      if (selectedMessage) {
         if (tab === 'new') cells.push({ col: 'I', value: selectedMessage });
+        else if (isSecondFollowUp) cells.push({ col: 'M', value: selectedMessage });
         else cells.push({ col: 'L', value: selectedMessage });
       }
       cells.push({ col: 'N', value: todayDMY() });
@@ -714,9 +715,11 @@ export default function OutreachApp() {
             </div>
 
             {/* Message picker */}
-            {!isSecondFollowUp && messageOptions.length > 0 && (
+            {messageOptions.length > 0 && (
               <div className={styles.msgPickerRow}>
-                <label className={styles.msgPickerLabel}>Message sent</label>
+                <label className={styles.msgPickerLabel}>
+                  {isSecondFollowUp ? 'Follow up 2' : 'Message sent'}
+                </label>
                 <select
                   className={styles.msgPickerSelect}
                   value={selectedMessage}
@@ -728,9 +731,6 @@ export default function OutreachApp() {
                   ))}
                 </select>
               </div>
-            )}
-            {isSecondFollowUp && (
-              <div className={styles.secondFollowUpNote}>Second follow-up — date only will be recorded</div>
             )}
 
             {/* Actions */}
