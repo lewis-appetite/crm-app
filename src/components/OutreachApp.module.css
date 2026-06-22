@@ -933,3 +933,230 @@
   color: var(--text-dim);
   padding: 0 2px 2px;
 }
+
+/* ── Stats tab ── */
+.statsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statsCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.statsCardTitle {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.statsTodayRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statsBigNum {
+  font-size: 48px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1;
+  font-family: 'DM Mono', monospace;
+}
+
+.statsBigLabel {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.streakBadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--amber-bg);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+.streakFlame {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.streakNum {
+  font-family: 'DM Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--amber);
+  line-height: 1;
+}
+
+.streakLabel {
+  font-size: 10px;
+  color: var(--amber);
+  font-family: 'DM Mono', monospace;
+}
+
+/* Week comparison table */
+.weekTable {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.weekTableHeader {
+  display: grid;
+  grid-template-columns: 1fr 72px 72px 48px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.weekTableHeader span {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.weekTableHeader span:first-child {
+  text-align: left;
+}
+
+.weekTableRow {
+  display: grid;
+  grid-template-columns: 1fr 72px 72px 48px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+}
+
+.weekTableRow:last-child {
+  border-bottom: none;
+}
+
+.weekRowLabel {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.weekRowVal {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  text-align: right;
+}
+
+.weekRowDelta {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.deltaPos { color: var(--green); }
+.deltaNeg { color: var(--red); }
+
+/* Bar chart */
+.barChart {
+  width: 100%;
+  height: 100px;
+  display: block;
+  margin-bottom: 8px;
+  overflow: visible;
+}
+
+.barNew {
+  fill: var(--accent);
+  opacity: 0.85;
+}
+
+.barFollowUp {
+  fill: var(--amber);
+  opacity: 0.6;
+}
+
+.barLabel {
+  font-size: 8px;
+  fill: var(--text-dim);
+  font-family: 'DM Mono', monospace;
+}
+
+.barValue {
+  font-size: 7px;
+  fill: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+}
+
+.barLegend {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+}
+
+.legendNew { color: var(--accent); }
+.legendFu { color: var(--amber); opacity: 0.8; }
+
+/* Reply rate rows */
+.rateRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+}
+
+.rateRow:last-child {
+  border-bottom: none;
+}
+
+.rateLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.rateBarWrap {
+  flex: 1;
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rateBarFill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.ratePct {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.rateSent {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}

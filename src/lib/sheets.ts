@@ -277,3 +277,141 @@ export function todayDMY(): string {
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+
+export interface WeekBucket {
+  weekStart: Date;
+  label: string;
+  newOutreach: number;
+  followUps: number;
+  total: number;
+}
+
+export interface StageRate {
+  sent: number;
+  replied: number;
+  rate: number | null;
+}
+
+export interface Stats {
+  todayCount: number;
+  streak: number;
+  thisWeek: WeekBucket;
+  lastWeek: WeekBucket;
+  sixWeeks: WeekBucket[];
+  replyRates: {
+    initialMessage: StageRate;
+    firstFollowUp: StageRate;
+    secondFollowUp: StageRate;
+  };
+}
+
+function getWeekStart(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return d;
+}
+
+function weekLabel(date: Date): string {
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+}
+
+function contactStage(c: Contact): 'new' | 'followup' {
+  return (c.followUpMessage1 || c.followUpMessage2) ? 'followup' : 'new';
+}
+
+function emptyBucket(weekStart: Date): WeekBucket {
+  return { weekStart, label: weekLabel(weekStart), newOutreach: 0, followUps: 0, total: 0 };
+}
+
+export function getStats(contacts: Contact[]): Stats {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Build 6 week buckets (most recent first)
+  const buckets: WeekBucket[] = [];
+  for (let i = 0; i < 6; i++) {
+    const ws = getWeekStart(new Date(today));
+    ws.setDate(ws.getDate() - i * 7);
+    buckets.unshift(emptyBucket(ws));
+  }
+
+  let todayCount = 0;
+  const touchedDays = new Set<string>();
+
+  contacts.forEach(c => {
+    const d = parseDate(c.lastContacted);
+    if (!d) return;
+    const stage = contactStage(c);
+
+    if (sameDay(d, today)) todayCount++;
+    touchedDays.add(d.toISOString().slice(0, 10));
+
+    const ws = getWeekStart(d);
+    const bucket = buckets.find(b => b.weekStart.getTime() === ws.getTime());
+    if (!bucket) return;
+
+    bucket.total++;
+    if (stage === 'new') bucket.newOutreach++;
+    else bucket.followUps++;
+  });
+
+  // Streak: consecutive days from today backwards
+  let streak = 0;
+  const cursor = new Date(today);
+  while (true) {
+    if (touchedDays.has(cursor.toISOString().slice(0, 10))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  const thisWeek = buckets[5];
+  const lastWeek = buckets[4];
+
+  // Reply rates by stage
+  const stages = { initialMessage: { sent: 0, replied: 0 }, firstFollowUp: { sent: 0, replied: 0 }, secondFollowUp: { sent: 0, replied: 0 } };
+  contacts.forEach(c => {
+    if (!c.message) return;
+    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
+    if (c.followUpMessage2) {
+      stages.secondFollowUp.sent++;
+      if (isPositive) stages.secondFollowUp.replied++;
+    } else if (c.followUpMessage1) {
+      stages.firstFollowUp.sent++;
+      if (isPositive) stages.firstFollowUp.replied++;
+    } else {
+      stages.initialMessage.sent++;
+      if (isPositive) stages.initialMessage.replied++;
+    }
+  });
+
+  const toRate = (s: { sent: number; replied: number }): StageRate => ({
+    ...s,
+    rate: s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
+  });
+
+  return {
+    todayCount,
+    streak,
+    thisWeek,
+    lastWeek,
+    sixWeeks: buckets,
+    replyRates: {
+      initialMessage: toRate(stages.initialMessage),
+      firstFollowUp: toRate(stages.firstFollowUp),
+      secondFollowUp: toRate(stages.secondFollowUp),
+    },
+  };
+}
