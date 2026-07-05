@@ -7,6 +7,16 @@ import {
   getMessageStats, MessageStats, POSITIVE_REPLIES,
   getStats, Stats,
 } from '@/lib/sheets';
+
+interface CakeImage {
+  name: string;
+  fileId: string;
+  viewLink: string;
+}
+
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 import styles from './OutreachApp.module.css';
 
 interface SheetData {
@@ -37,6 +47,7 @@ export default function OutreachApp() {
   const [filterReply, setFilterReply] = useState('');
 
   const [messagesView, setMessagesView] = useState<MessagesView>('cards');
+  const [cakeImages, setCakeImages] = useState<CakeImage[]>([]);
 
   // New contacts sort + filter
   const [newSort, setNewSort] = useState<NewSort>('recent');
@@ -64,12 +75,17 @@ export default function OutreachApp() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/sheet');
-      const json = await res.json();
+      const [sheetRes, cakeRes] = await Promise.all([
+        fetch('/api/sheet'),
+        fetch('/api/cake-images'),
+      ]);
+      const json = await sheetRes.json();
       if (json.error) throw new Error(json.error);
       setData(json);
       setIndex(0);
       setDismissed(new Set());
+      const cakeJson = await cakeRes.json();
+      if (!cakeJson.error) setCakeImages(cakeJson.images ?? []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -85,6 +101,15 @@ export default function OutreachApp() {
     if (copyTimeout.current) clearTimeout(copyTimeout.current);
   }, [index, tab, dismissed]);
 
+  // Build cake image lookup map
+  const cakeImageMap = Object.fromEntries(
+    cakeImages.map(img => [normalizeForMatch(img.name), img.viewLink])
+  );
+
+  function getCakeLink(company: string): string | null {
+    return cakeImageMap[normalizeForMatch(company)] ?? null;
+  }
+
   // Sorted + filtered new contacts queue
   const sortedNewContacts = (() => {
     if (!data) return [];
@@ -95,10 +120,15 @@ export default function OutreachApp() {
         return true;
       })
       .sort((a, b) => {
-        if (newSort === 'az') return a.fullName.localeCompare(b.fullName);
+        // Primary: contacts with a cake image first
+        const aHasCake = !!getCakeLink(a.company);
+        const bHasCake = !!getCakeLink(b.company);
+        if (aHasCake !== bHasCake) return aHasCake ? -1 : 1;
+        // Secondary: user-chosen sort
+        if (newSort === 'az') return a.company.localeCompare(b.company);
         const da = parseDate(a.connectedOn);
         const db = parseDate(b.connectedOn);
-        if (!da || !db) return 0;
+        if (!da || !db) return a.company.localeCompare(b.company);
         return newSort === 'recent'
           ? db.getTime() - da.getTime()
           : da.getTime() - db.getTime();
@@ -791,17 +821,30 @@ export default function OutreachApp() {
                     {contact!.company && <> · <span>{contact!.company}</span></>}
                   </div>
                 </div>
-                <a
-                  className={`${styles.liBtn} ${!contact!.url ? styles.disabled : ''}`}
-                  onClick={() => contact!.url && handleLinkedIn(contact!)}
-                  role="button"
-                  aria-label="Open LinkedIn profile"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                  </svg>
-                  Profile
-                </a>
+                <div className={styles.cardBtns}>
+                  {tab === 'new' && contact!.company && getCakeLink(contact!.company) && (
+                    <a
+                      className={styles.cakeBtn}
+                      href={getCakeLink(contact!.company)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="View cake design"
+                    >
+                      🎂
+                    </a>
+                  )}
+                  <a
+                    className={`${styles.liBtn} ${!contact!.url ? styles.disabled : ''}`}
+                    onClick={() => contact!.url && handleLinkedIn(contact!)}
+                    role="button"
+                    aria-label="Open LinkedIn profile"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                    Profile
+                  </a>
+                </div>
               </div>
 
               <div className={styles.cardDetails}>
