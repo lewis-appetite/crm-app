@@ -35,6 +35,35 @@ type MessagesView = 'cards' | 'table';
 
 const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Not interested', 'Blocked', 'Gone cold'];
 
+interface UpdateBody {
+  rowIndex: number;
+  cells: { col: string; value: string }[];
+  log?: {
+    date: string;
+    rowIndex: number;
+    name: string;
+    company: string;
+    action: string;
+    template: string;
+    detail: string;
+  };
+}
+
+async function postUpdate(payload: UpdateBody): Promise<boolean> {
+  try {
+    const res = await fetch('/api/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return false;
+    const json = await res.json();
+    return !!json.ok;
+  } catch {
+    return false;
+  }
+}
+
 function GoalRing({ value, max, label }: { value: number; max: number; label: string }) {
   const pct = max > 0 ? Math.min(value / max, 1) : 0;
   const r = 14;
@@ -85,6 +114,8 @@ export default function OutreachApp() {
   const sessionStart = useRef<number | null>(null);
   const [goalCelebrated, setGoalCelebrated] = useState(false);
   const [celebration, setCelebration] = useState<{ title: string; detail: string } | null>(null);
+  const [failedWrites, setFailedWrites] = useState<UpdateBody[]>([]);
+  const [retrying, setRetrying] = useState(false);
 
   // New contacts sort + filter
   const [newSort, setNewSort] = useState<NewSort>('recent');
@@ -239,29 +270,36 @@ export default function OutreachApp() {
     cells: { col: string; value: string }[],
     log?: { action: string; template?: string; detail?: string; name?: string; company?: string }
   ) {
-    try {
-      await fetch('/api/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rowIndex,
-          cells,
-          log: log
-            ? {
-                date: todayDMY(),
-                rowIndex,
-                name: log.name ?? '',
-                company: log.company ?? '',
-                action: log.action,
-                template: log.template ?? '',
-                detail: log.detail ?? '',
-              }
-            : undefined,
-        }),
-      });
-    } catch {
-      // silent fail — UI already updated optimistically
+    const payload: UpdateBody = {
+      rowIndex,
+      cells,
+      log: log
+        ? {
+            date: todayDMY(),
+            rowIndex,
+            name: log.name ?? '',
+            company: log.company ?? '',
+            action: log.action,
+            template: log.template ?? '',
+            detail: log.detail ?? '',
+          }
+        : undefined,
+    };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
+  }
+
+  async function retryFailedWrites() {
+    if (retrying || failedWrites.length === 0) return;
+    setRetrying(true);
+    const pending = failedWrites;
+    setFailedWrites([]);
+    const stillFailed: UpdateBody[] = [];
+    for (const p of pending) {
+      if (!(await postUpdate(p))) stillFailed.push(p);
     }
+    setFailedWrites(prev => [...stillFailed, ...prev]);
+    setRetrying(false);
   }
 
   function handleLinkedIn(c: Contact) {
@@ -285,6 +323,8 @@ export default function OutreachApp() {
         else if (followUpStage === 1) cells.push({ col: 'L', value: templateUsed });
         else if (followUpStage === 2) cells.push({ col: 'M', value: templateUsed });
       }
+      const newFollowUpCount = tab === 'followup' ? (parseInt(c.followUps) || 0) + 1 : null;
+      if (newFollowUpCount !== null) cells.push({ col: 'K', value: String(newFollowUpCount) });
       cells.push({ col: 'N', value: todayDMY() });
 
       await updateSheet(c.rowIndex, cells, {
@@ -306,6 +346,7 @@ export default function OutreachApp() {
             : {
                 ...x,
                 lastContacted: todayDMY(),
+                ...(newFollowUpCount !== null ? { followUps: String(newFollowUpCount) } : {}),
                 ...(templateUsed && tab === 'new' ? { message: templateUsed } : {}),
                 ...(templateUsed && tab === 'followup' && followUpStage === 1 ? { followUpMessage1: templateUsed } : {}),
                 ...(templateUsed && tab === 'followup' && followUpStage === 2 ? { followUpMessage2: templateUsed } : {}),
@@ -544,6 +585,17 @@ export default function OutreachApp() {
           </button>
         </div>
       </header>
+
+      {failedWrites.length > 0 && (
+        <div className={styles.syncBanner}>
+          <span>
+            {failedWrites.length} update{failedWrites.length !== 1 ? 's' : ''} failed to save to the sheet
+          </span>
+          <button className={styles.syncRetryBtn} onClick={retryFailedWrites} disabled={retrying}>
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
 
       {/* Main content */}
       <main className={styles.main}>
@@ -1131,7 +1183,7 @@ export default function OutreachApp() {
               </div>
             ) : (
               <div className={styles.msgCard}>
-                <p className={styles.noTemplate}>No template assigned — check the sheet.</p>
+                <p className={styles.noTemplate}>No unused templates left for this contact — add more in the Messages sheet.</p>
               </div>
             )}
 

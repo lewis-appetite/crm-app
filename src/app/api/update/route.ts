@@ -29,8 +29,13 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({ rowIndex, cells: cells ?? [], log }),
       redirect: 'follow',
     });
-    if (!res.ok) {
-      throw new Error(`Script responded with ${res.status}`);
+    // Apps Script returns 200 with an HTML error page when the script throws,
+    // so any non-JSON body means the write failed
+    const text = await res.text();
+    let scriptOk = false;
+    try { JSON.parse(text); scriptOk = true; } catch { /* HTML error page */ }
+    if (!res.ok || !scriptOk) {
+      throw new Error(`Script responded with ${res.status}: ${text.slice(0, 200)}`);
     }
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

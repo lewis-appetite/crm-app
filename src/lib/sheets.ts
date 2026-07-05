@@ -113,6 +113,16 @@ export function parseMessages(rows: string[][]): Message[] {
 
 export const POSITIVE_REPLIES = ['interested', 'yes', 'referred'];
 
+// Contacts messaged recently who haven't replied yet shouldn't drag down
+// reply rates — they haven't had a fair chance to respond
+const REPLY_WINDOW_DAYS = 7;
+
+export function countsForReplyRate(c: Contact): boolean {
+  if (c.reply) return true;
+  const days = daysAgo(c.lastContacted);
+  return days !== null && days >= REPLY_WINDOW_DAYS;
+}
+
 // Replies that still warrant a follow-up, in priority order
 const FOLLOW_UP_WORTHY = ['interested', 'yes', '', 'referred'];
 const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2, referred: 3 };
@@ -187,51 +197,67 @@ export function suggestMessage(
   messages: Message[],
   isFollowUp: boolean
 ): SuggestedMessage | null {
-  const templateAbbr = isFollowUp ? contact.followUpMessage1 : contact.message;
+  // Never suggest a template this contact has already received
+  const alreadySent = new Set(
+    [contact.message, contact.followUpMessage1, contact.followUpMessage2].filter(Boolean)
+  );
+  const wantedType = isFollowUp ? 'Follow Up' : 'Initial Outreach';
+  const candidates = messages.filter(
+    m => m.messageType === wantedType && !alreadySent.has(m.abbreviation)
+  );
+  if (candidates.length === 0) return null;
 
-  // Build stats: for similar roles, which templates got replies?
   const roleKeyword = contact.position.toLowerCase().split(' ')[0];
   const func = contact.function.toLowerCase();
 
-  const stats: Record<string, { sent: number; replied: number }> = {};
+  const similarStats: Record<string, { sent: number; replied: number }> = {};
+  const overallStats: Record<string, { sent: number; replied: number }> = {};
+  const bump = (stats: Record<string, { sent: number; replied: number }>, abbr: string, replied: boolean) => {
+    if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
+    stats[abbr].sent++;
+    if (replied) stats[abbr].replied++;
+  };
 
   allContacts.forEach(c => {
-    const abbr = isFollowUp ? c.followUpMessage1 : c.message;
-    if (!abbr) return;
+    if (!countsForReplyRate(c)) return;
+    const abbrs = isFollowUp
+      ? [c.followUpMessage1, c.followUpMessage2].filter(Boolean)
+      : c.message ? [c.message] : [];
+    if (abbrs.length === 0) return;
 
+    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
     const cRole = c.position.toLowerCase();
     const cFunc = c.function.toLowerCase();
     const isSimilar =
       (roleKeyword && cRole.includes(roleKeyword)) ||
       (func && cFunc === func);
 
-    if (!isSimilar) return;
-
-    if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
-    stats[abbr].sent++;
-    if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) stats[abbr].replied++;
+    abbrs.forEach(abbr => {
+      bump(overallStats, abbr, isPositive);
+      if (isSimilar) bump(similarStats, abbr, isPositive);
+    });
   });
 
-  // Find best performing template for similar roles
-  let bestAbbr: string | null = null;
-  let bestRate = -1;
-  Object.entries(stats).forEach(([abbr, s]) => {
-    if (s.sent < 2) return; // need at least 2 data points
-    const rate = s.replied / s.sent;
-    if (rate > bestRate) {
-      bestRate = rate;
-      bestAbbr = abbr;
-    }
-  });
+  const pickBest = (stats: Record<string, { sent: number; replied: number }>): string | null => {
+    let best: string | null = null;
+    let bestRate = -1;
+    candidates.forEach(m => {
+      const s = stats[m.abbreviation];
+      if (!s || s.sent < 2) return; // need at least 2 data points
+      const rate = s.replied / s.sent;
+      if (rate > bestRate) {
+        bestRate = rate;
+        best = m.abbreviation;
+      }
+    });
+    return best;
+  };
 
-  // Use best template if found, otherwise fall back to contact's assigned template
-  const chosenAbbr = bestAbbr || templateAbbr;
-  if (!chosenAbbr) return null;
+  // Best for similar roles → best overall → first unused template of the right type
+  const chosenAbbr = pickBest(similarStats) || pickBest(overallStats) || candidates[0].abbreviation;
+  const messageRecord = candidates.find(m => m.abbreviation === chosenAbbr)!;
 
-  const messageRecord = messages.find(m => m.abbreviation === chosenAbbr);
-  if (!messageRecord) return null;
-
-  const s = stats[chosenAbbr];
+  const s = similarStats[chosenAbbr] ?? overallStats[chosenAbbr];
   const replyRate = s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null;
 
   return {
@@ -263,17 +289,13 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
   const stats: Record<string, { sent: number; replied: number }> = {};
 
   contacts.forEach(c => {
+    if (!countsForReplyRate(c)) return;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    if (c.message) {
-      if (!stats[c.message]) stats[c.message] = { sent: 0, replied: 0 };
-      stats[c.message].sent++;
-      if (isPositive) stats[c.message].replied++;
-    }
-    if (c.followUpMessage1) {
-      if (!stats[c.followUpMessage1]) stats[c.followUpMessage1] = { sent: 0, replied: 0 };
-      stats[c.followUpMessage1].sent++;
-      if (isPositive) stats[c.followUpMessage1].replied++;
-    }
+    [c.message, c.followUpMessage1, c.followUpMessage2].filter(Boolean).forEach(abbr => {
+      if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
+      stats[abbr].sent++;
+      if (isPositive) stats[abbr].replied++;
+    });
   });
 
   return messages.map(m => {
@@ -439,6 +461,7 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
   const stages = { initialMessage: { sent: 0, replied: 0 }, firstFollowUp: { sent: 0, replied: 0 }, secondFollowUp: { sent: 0, replied: 0 } };
   contacts.forEach(c => {
     if (!c.message) return;
+    if (!countsForReplyRate(c)) return;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
     if (c.followUpMessage2) {
       stages.secondFollowUp.sent++;

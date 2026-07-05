@@ -1483,3 +1483,33 @@
   color: var(--text-dim);
   margin-top: 4px;
 }
+
+/* ── Sync failure banner ── */
+
+.syncBanner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  background: var(--red-bg);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.25);
+  color: var(--red);
+  font-size: 12px;
+}
+
+.syncRetryBtn {
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: transparent;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.syncRetryBtn:disabled {
+  opacity: 0.5;
+}
