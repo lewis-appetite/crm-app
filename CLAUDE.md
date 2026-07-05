@@ -13,7 +13,7 @@ A personal LinkedIn outreach CRM. A Next.js 14 app that uses **Google Sheets as 
 
 ## Data Model
 
-Two Google Sheets tabs:
+Three Google Sheets tabs:
 
 ### Connections tab (one row per contact)
 | Col | Letter | Field |
@@ -42,6 +42,19 @@ Two Google Sheets tabs:
 | 2 | Abbreviation (short code used in Connections sheet) |
 | 3 | Full Message text |
 
+### Activity tab (append-only log, one row per action)
+| Col | Field |
+|-----|-------|
+| A | Date (DD/MM/YYYY) |
+| B | Row (Connections rowIndex) |
+| C | Name |
+| D | Company |
+| E | Action (`new` / `followup1` / `followup2` / `followup3` / `reply`) |
+| F | Template abbreviation |
+| G | Detail (reply value for `reply` actions) |
+
+Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts.
+
 ## Key Logic (`src/lib/sheets.ts`)
 
 **Follow-up queue** — contacts where:
@@ -58,22 +71,38 @@ Two Google Sheets tabs:
 
 ## API Routes
 
-- `GET /api/sheet` — fetches both Sheets tabs, returns `{ followUps, newContacts, messages, allContacts, intervalDays }`
-- `POST /api/update` — batch-updates cells in the Connections sheet (last contacted date, reply status, etc.)
+- `GET /api/sheet` — fetches Connections + Messages + Activity tabs, returns `{ followUps, newContacts, messages, allContacts, activity, intervalDays, dailyNewGoal }`
+- `POST /api/update` — forwards `{ rowIndex, cells, log? }` to the Apps Script web app, which updates Connections cells and appends `log` to the Activity tab
+- `GET /api/cake-images` — lists PNGs from the cake designs Drive folder, cached 300s
 
 ## Environment Variables
 
 ```
 GOOGLE_SHEET_ID=
 GOOGLE_SHEETS_API_KEY=
+GOOGLE_APPS_SCRIPT_URL=
 FOLLOW_UP_INTERVAL_DAYS=14
+DAILY_NEW_GOAL=25
 ```
+
+Writes go through the Apps Script web app — the API key is read-only. The key must have both the Sheets API and Drive API enabled (Drive is used for cake images).
 
 ## UI Tabs
 
-1. **Follow-ups** — contacts due for re-engagement
-2. **New Contacts** — untouched connections (no initial message sent)
-3. **Messages** — library of outreach templates
+1. **Follow-ups** — contacts due for re-engagement, one card at a time
+2. **New** — untouched connections; cake-image matches sort first with inline preview
+3. **Messages** — template library with reply rates (card/table views)
+4. **Cake** — copyable ChatGPT prompt + Drive template link for generating cake designs
+5. **All** — searchable/filterable list of every contact with inline editing
+6. **Stats** — today count, streak, week-on-week bar chart, reply rates by stage
+
+## Gamification (goal: 25 new + all due follow-ups daily)
+
+- **Goal bar** (all tabs): progress rings for New today / Follow-ups today, streak flame, combo chip
+- **Streak**: goal-based (≥ DAILY_NEW_GOAL new sends) for days covered by the Activity log; any-activity for earlier days
+- **Send flow**: card shows suggested template pre-personalised → "Copy & open LinkedIn" → "Sent" logs template + date + Activity row, auto-advances, builds combo (resets on tab switch)
+- **Celebrations**: confetti overlay on hitting the daily goal and on logging an "Interested" reply (shows the template's updated reply rate)
+- If no template is explicitly picked, "Sent" credits the suggested template shown on the card
 
 ---
 
@@ -85,17 +114,11 @@ FOLLOW_UP_INTERVAL_DAYS=14
 
 ---
 
-## Planned Changes
+## Planned Changes (Phase 2/3 of gamification)
 
-### 1. Messages tab — show reply rate per template
-- Each message template in the Messages tab should display its overall reply rate (% of contacts who replied "Interested" after receiving that template).
-- This requires computing stats across `allContacts`: for each template abbreviation, count how many contacts have it in `message` or `followUpMessage1`, and how many of those have `reply === "interested"`.
-- The existing `suggestMessage` function already does per-role stats — extract/generalise this into a `getMessageStats(contacts, messages)` function and expose it via the API.
-
-### 2. Reply attribution — mark reply against both follow-up and initial message
-- When a contact replies after a follow-up (i.e. `followUpMessage1` is set and `reply === "interested"`), the positive reply should count toward the reply rate of **both** the follow-up template AND the initial message template.
-- Currently `suggestMessage` only checks `isFollowUp ? c.followUpMessage1 : c.message` — it doesn't cross-attribute replies.
-- Update stats logic so a reply credits whichever templates were used in the sequence.
+- **Explore/exploit nudges** — occasionally suggest under-tested templates ("only 4 sends, needs data") so new messages get sample size
+- **Messages tab** — confidence indicators on reply rates + week-over-week trend arrows (needs Activity log data to accumulate)
+- **Streak polish** — streak-at-risk warning, milestone badges, personal bests
 
 ---
 

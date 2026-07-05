@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Contact, Message, SuggestedMessage,
+  Contact, Message, SuggestedMessage, ActivityEvent,
   suggestMessage, daysAgo, parseDate, todayDMY,
   getMessageStats, MessageStats, POSITIVE_REPLIES,
   getStats, Stats,
@@ -24,7 +24,9 @@ interface SheetData {
   newContacts: Contact[];
   messages: Message[];
   allContacts: Contact[];
+  activity: ActivityEvent[];
   intervalDays: number;
+  dailyNewGoal: number;
 }
 
 type Tab = 'followup' | 'new' | 'messages' | 'cake' | 'connections' | 'stats';
@@ -32,6 +34,33 @@ type NewSort = 'recent' | 'oldest' | 'az';
 type MessagesView = 'cards' | 'table';
 
 const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Not interested', 'Blocked', 'Gone cold'];
+
+function GoalRing({ value, max, label }: { value: number; max: number; label: string }) {
+  const pct = max > 0 ? Math.min(value / max, 1) : 0;
+  const r = 14;
+  const circ = 2 * Math.PI * r;
+  const done = max > 0 && value >= max;
+  return (
+    <div className={styles.goalRing}>
+      <svg width="36" height="36" viewBox="0 0 36 36">
+        <circle cx="18" cy="18" r={r} className={styles.ringTrack} />
+        <circle
+          cx="18" cy="18" r={r}
+          className={`${styles.ringFill} ${done ? styles.ringDone : ''}`}
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - pct)}
+          transform="rotate(-90 18 18)"
+        />
+      </svg>
+      <div className={styles.ringText}>
+        <span className={styles.ringValue}>
+          {value}<span className={styles.ringMax}>/{max}</span>
+        </span>
+        <span className={styles.ringLabel}>{label}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function OutreachApp() {
   const [data, setData] = useState<SheetData | null>(null);
@@ -48,6 +77,14 @@ export default function OutreachApp() {
 
   const [messagesView, setMessagesView] = useState<MessagesView>('cards');
   const [cakeImages, setCakeImages] = useState<CakeImage[]>([]);
+
+  // Gamification
+  const [localEvents, setLocalEvents] = useState<ActivityEvent[]>([]);
+  const [combo, setCombo] = useState(0);
+  const [sessionSent, setSessionSent] = useState(0);
+  const sessionStart = useRef<number | null>(null);
+  const [goalCelebrated, setGoalCelebrated] = useState(false);
+  const [celebration, setCelebration] = useState<{ title: string; detail: string } | null>(null);
 
   // New contacts sort + filter
   const [newSort, setNewSort] = useState<NewSort>('recent');
@@ -84,6 +121,7 @@ export default function OutreachApp() {
       setData(json);
       setIndex(0);
       setDismissed(new Set());
+      setLocalEvents([]);
       const cakeJson = await cakeRes.json();
       if (!cakeJson.error) setCakeImages(cakeJson.images ?? []);
     } catch (e: unknown) {
@@ -101,13 +139,23 @@ export default function OutreachApp() {
     if (copyTimeout.current) clearTimeout(copyTimeout.current);
   }, [index, tab, dismissed]);
 
+  useEffect(() => {
+    if (!celebration) return;
+    const t = setTimeout(() => setCelebration(null), 4000);
+    return () => clearTimeout(t);
+  }, [celebration]);
+
   // Build cake image lookup map
-  const cakeImageMap = Object.fromEntries(
-    cakeImages.map(img => [normalizeForMatch(img.name), img.viewLink])
+  const cakeImageMap: Record<string, CakeImage> = Object.fromEntries(
+    cakeImages.map(img => [normalizeForMatch(img.name), img])
   );
 
-  function getCakeLink(company: string): string | null {
+  function getCake(company: string): CakeImage | null {
     return cakeImageMap[normalizeForMatch(company)] ?? null;
+  }
+
+  function getCakeLink(company: string): string | null {
+    return getCake(company)?.viewLink ?? null;
   }
 
   // Sorted + filtered new contacts queue
@@ -141,6 +189,32 @@ export default function OutreachApp() {
       )
     : [];
 
+  const dailyNewGoal = data?.dailyNewGoal ?? 25;
+  const stats: Stats | null = data
+    ? getStats(data.allContacts, [...(data.activity ?? []), ...localEvents], dailyNewGoal)
+    : null;
+
+  const followUpsRemaining = data
+    ? data.followUps.filter(c => !dismissed.has(c.rowIndex)).length
+    : 0;
+  const followUpsDueTotal = followUpsRemaining + (stats?.todayFollowUps ?? 0);
+  const todayNew = stats?.todayNew ?? 0;
+
+  useEffect(() => {
+    if (!data || goalCelebrated || todayNew < dailyNewGoal) return;
+    setGoalCelebrated(true);
+    // celebrate only when the goal is crossed during use, not when loading an already-complete day
+    if (sessionSent > 0) {
+      const mins = sessionStart.current
+        ? Math.max(1, Math.round((Date.now() - sessionStart.current) / 60000))
+        : null;
+      setCelebration({
+        title: '🎯 Daily goal smashed!',
+        detail: `${dailyNewGoal} new contacts messaged today${mins !== null ? ` — ${sessionSent} this session in ${mins} min` : ''}`,
+      });
+    }
+  }, [data, todayNew, dailyNewGoal, goalCelebrated, sessionSent]);
+
   const safeIndex = Math.min(index, Math.max(0, queue.length - 1));
   const contact = queue[safeIndex] ?? null;
 
@@ -160,12 +234,30 @@ export default function OutreachApp() {
       : m.messageType === 'Follow Up'
   ) ?? [];
 
-  async function updateSheet(rowIndex: number, cells: { col: string; value: string }[]) {
+  async function updateSheet(
+    rowIndex: number,
+    cells: { col: string; value: string }[],
+    log?: { action: string; template?: string; detail?: string; name?: string; company?: string }
+  ) {
     try {
       await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rowIndex, cells }),
+        body: JSON.stringify({
+          rowIndex,
+          cells,
+          log: log
+            ? {
+                date: todayDMY(),
+                rowIndex,
+                name: log.name ?? '',
+                company: log.company ?? '',
+                action: log.action,
+                template: log.template ?? '',
+                detail: log.detail ?? '',
+              }
+            : undefined,
+        }),
       });
     } catch {
       // silent fail — UI already updated optimistically
@@ -174,7 +266,6 @@ export default function OutreachApp() {
 
   function handleLinkedIn(c: Contact) {
     if (!c.url) return;
-    updateSheet(c.rowIndex, [{ col: 'N', value: todayDMY() }]);
     window.open(c.url, '_blank');
   }
 
@@ -182,22 +273,66 @@ export default function OutreachApp() {
     if (!contact || actionLoading) return;
     setActionLoading(true);
 
+    const c = contact;
     const cells: { col: string; value: string }[] = [];
 
     if (action === 'contacted') {
-      if (selectedMessage) {
-        if (tab === 'new') cells.push({ col: 'I', value: selectedMessage });
-        else if (followUpStage === 1) cells.push({ col: 'L', value: selectedMessage });
-        else if (followUpStage === 2) cells.push({ col: 'M', value: selectedMessage });
+      const templateUsed = selectedMessage || suggestion?.abbreviation || '';
+      const actionType = tab === 'new' ? 'new' : `followup${followUpStage}`;
+
+      if (templateUsed) {
+        if (tab === 'new') cells.push({ col: 'I', value: templateUsed });
+        else if (followUpStage === 1) cells.push({ col: 'L', value: templateUsed });
+        else if (followUpStage === 2) cells.push({ col: 'M', value: templateUsed });
       }
       cells.push({ col: 'N', value: todayDMY() });
+
+      await updateSheet(c.rowIndex, cells, {
+        action: actionType,
+        template: templateUsed,
+        name: c.fullName,
+        company: c.company,
+      });
+
+      setLocalEvents(prev => [
+        ...prev,
+        { date: todayDMY(), rowIndex: c.rowIndex, action: actionType, template: templateUsed },
+      ]);
+      setData(prev => {
+        if (!prev) return prev;
+        const upd = (x: Contact) =>
+          x.rowIndex !== c.rowIndex
+            ? x
+            : {
+                ...x,
+                lastContacted: todayDMY(),
+                ...(templateUsed && tab === 'new' ? { message: templateUsed } : {}),
+                ...(templateUsed && tab === 'followup' && followUpStage === 1 ? { followUpMessage1: templateUsed } : {}),
+                ...(templateUsed && tab === 'followup' && followUpStage === 2 ? { followUpMessage2: templateUsed } : {}),
+              };
+        return {
+          ...prev,
+          allContacts: prev.allContacts.map(upd),
+          followUps: prev.followUps.map(upd),
+          newContacts: prev.newContacts.map(upd),
+        };
+      });
+
+      if (!sessionStart.current) sessionStart.current = Date.now();
+      setSessionSent(s => s + 1);
+      setCombo(x => x + 1);
     } else {
       cells.push({ col: 'J', value: 'Dead lead' });
+      await updateSheet(c.rowIndex, cells, {
+        action: 'reply',
+        detail: 'Dead lead',
+        name: c.fullName,
+        company: c.company,
+      });
     }
 
-    await updateSheet(contact.rowIndex, cells);
-    setDismissed(prev => new Set(prev).add(contact.rowIndex));
-    const newQueue = queue.filter(c => c.rowIndex !== contact.rowIndex);
+    setDismissed(prev => new Set(prev).add(c.rowIndex));
+    const newQueue = queue.filter(q => q.rowIndex !== c.rowIndex);
     setIndex(i => Math.min(i, Math.max(0, newQueue.length - 1)));
     setSelectedMessage('');
     setActionLoading(false);
@@ -209,6 +344,17 @@ export default function OutreachApp() {
       setCopied(true);
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
       copyTimeout.current = setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function handleCopyOpen() {
+    if (!suggestion?.fullMessage || !contact) return;
+    const url = contact.url;
+    navigator.clipboard.writeText(suggestion.fullMessage).then(() => {
+      setCopied(true);
+      if (copyTimeout.current) clearTimeout(copyTimeout.current);
+      copyTimeout.current = setTimeout(() => setCopied(false), 2500);
+      if (url) window.open(url, '_blank');
     });
   }
 
@@ -224,6 +370,7 @@ export default function OutreachApp() {
     setTab(t);
     setIndex(0);
     setEditingRowIndex(null);
+    setCombo(0);
   }
 
   function openEdit(c: Contact) {
@@ -241,7 +388,7 @@ export default function OutreachApp() {
   }
 
   async function saveEdit() {
-    if (editingRowIndex === null || saveLoading) return;
+    if (editingRowIndex === null || saveLoading || !data) return;
     setSaveLoading(true);
 
     const fieldCols: Record<string, string> = {
@@ -254,29 +401,62 @@ export default function OutreachApp() {
       value,
     }));
 
-    await updateSheet(editingRowIndex, cells);
+    const prevContact = data.allContacts.find(c => c.rowIndex === editingRowIndex);
+    const replyChanged = !!prevContact && editValues.reply !== prevContact.reply;
+    const becameInterested =
+      replyChanged &&
+      editValues.reply.toLowerCase() === 'interested' &&
+      prevContact!.reply.toLowerCase() !== 'interested';
+    const creditedTemplate =
+      editValues.followUpMessage2 || editValues.followUpMessage1 || editValues.message || '';
 
-    setData(prev => {
-      if (!prev) return prev;
-      const updateContact = (c: Contact) =>
-        c.rowIndex !== editingRowIndex ? c : {
-          ...c,
-          list: editValues.list,
-          function: editValues.function,
-          message: editValues.message,
-          reply: editValues.reply,
-          followUpMessage1: editValues.followUpMessage1,
-          followUpMessage2: editValues.followUpMessage2,
-          lastContacted: editValues.lastContacted,
-          comment: editValues.comment,
-        };
-      return {
-        ...prev,
-        allContacts: prev.allContacts.map(updateContact),
-        followUps: prev.followUps.map(updateContact),
-        newContacts: prev.newContacts.map(updateContact),
+    await updateSheet(
+      editingRowIndex,
+      cells,
+      replyChanged && editValues.reply
+        ? {
+            action: 'reply',
+            detail: editValues.reply,
+            template: creditedTemplate,
+            name: prevContact?.fullName,
+            company: prevContact?.company,
+          }
+        : undefined
+    );
+
+    const updateContact = (c: Contact) =>
+      c.rowIndex !== editingRowIndex ? c : {
+        ...c,
+        list: editValues.list,
+        function: editValues.function,
+        message: editValues.message,
+        reply: editValues.reply,
+        followUpMessage1: editValues.followUpMessage1,
+        followUpMessage2: editValues.followUpMessage2,
+        lastContacted: editValues.lastContacted,
+        comment: editValues.comment,
       };
+    const updatedAll = data.allContacts.map(updateContact);
+
+    setData({
+      ...data,
+      allContacts: updatedAll,
+      followUps: data.followUps.map(updateContact),
+      newContacts: data.newContacts.map(updateContact),
     });
+
+    if (becameInterested && prevContact) {
+      const s = creditedTemplate
+        ? getMessageStats(updatedAll, data.messages).find(m => m.abbreviation === creditedTemplate)
+        : undefined;
+      setCelebration({
+        title: '🎉 Interested!',
+        detail:
+          s && s.sent > 0
+            ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.sent) * 100)}% reply rate (${s.replied}/${s.sent})`
+            : `${prevContact.fullName} is interested`,
+      });
+    }
 
     setEditingRowIndex(null);
     setSaveLoading(false);
@@ -328,6 +508,18 @@ export default function OutreachApp() {
             </svg>
           </button>
         </div>
+        {stats && (
+          <div className={styles.goalBar}>
+            <GoalRing value={todayNew} max={dailyNewGoal} label="New today" />
+            <GoalRing value={stats.todayFollowUps} max={followUpsDueTotal} label="Follow-ups" />
+            <div className={styles.goalBarRight}>
+              {combo >= 2 && <span className={styles.comboChip}>⚡ {combo}</span>}
+              <span className={`${styles.streakChip} ${stats.streak === 0 ? styles.streakZero : ''}`}>
+                🔥 {stats.streak}
+              </span>
+            </div>
+          </div>
+        )}
         <div className={styles.tabs}>
           <button className={`${styles.tab} ${tab === 'followup' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('followup')}>
             Follow-ups
@@ -405,10 +597,9 @@ export default function OutreachApp() {
 
         /* ── STATS TAB ── */
         : tab === 'stats' ? (() => {
-          const stats: Stats | null = data ? getStats(data.allContacts) : null;
           if (!stats) return null;
 
-          const { todayCount, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
+          const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
           const maxBar = Math.max(...sixWeeks.map(w => w.total), 1);
 
           function delta(a: number, b: number) {
@@ -442,6 +633,7 @@ export default function OutreachApp() {
                   <div>
                     <div className={styles.statsBigNum}>{todayCount}</div>
                     <div className={styles.statsBigLabel}>outreach today</div>
+                    <div className={styles.statsTodaySplit}>{tNew} new · {tFu} follow-ups</div>
                   </div>
                   {streak > 0 && (
                     <div className={styles.streakBadge}>
@@ -890,6 +1082,22 @@ export default function OutreachApp() {
                   </div>
                 )}
               </div>
+
+              {tab === 'new' && contact!.company && getCake(contact!.company) && (
+                <a
+                  className={styles.cakePreview}
+                  href={getCake(contact!.company)!.viewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`https://drive.google.com/thumbnail?id=${getCake(contact!.company)!.fileId}&sz=w600`}
+                    alt={`Cake design for ${contact!.company}`}
+                    loading="lazy"
+                  />
+                </a>
+              )}
             </div>
 
             {/* Message suggestion */}
@@ -905,16 +1113,21 @@ export default function OutreachApp() {
                   </div>
                 </div>
                 <p className={styles.msgBody}>{suggestion.fullMessage}</p>
-                <button
-                  className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ''}`}
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
-                  ) : (
-                    <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy message</>
-                  )}
-                </button>
+                <div className={styles.msgBtnRow}>
+                  <button
+                    className={`${styles.primaryBtn} ${copied ? styles.primaryBtnDone : ''}`}
+                    onClick={handleCopyOpen}
+                  >
+                    {copied ? (
+                      <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied — paste in LinkedIn</>
+                    ) : (
+                      <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy &amp; open LinkedIn</>
+                    )}
+                  </button>
+                  <button className={styles.copyOnlyBtn} onClick={handleCopy} title="Copy only" aria-label="Copy message only">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className={styles.msgCard}>
@@ -965,7 +1178,7 @@ export default function OutreachApp() {
                 disabled={actionLoading}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Contacted
+                Sent
               </button>
               <button
                 className={`${styles.actionBtn} ${styles.deadBtn}`}
@@ -979,6 +1192,29 @@ export default function OutreachApp() {
           </>
         )}
       </main>
+
+      {celebration && (
+        <div className={styles.celebrationOverlay} onClick={() => setCelebration(null)}>
+          <div className={styles.confetti}>
+            {Array.from({ length: 36 }).map((_, i) => (
+              <span
+                key={i}
+                className={styles.confettiPiece}
+                style={{
+                  left: `${(i * 137) % 100}%`,
+                  background: ['#4ade80', '#fbbf24', '#e8d5b0', '#f87171', '#60a5fa'][i % 5],
+                  animationDelay: `${(i % 12) * 0.12}s`,
+                  animationDuration: `${2.2 + (i % 5) * 0.3}s`,
+                }}
+              />
+            ))}
+          </div>
+          <div className={styles.celebrationCard}>
+            <div className={styles.celebrationTitle}>{celebration.title}</div>
+            <div className={styles.celebrationDetail}>{celebration.detail}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

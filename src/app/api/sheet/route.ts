@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   parseConnections,
   parseMessages,
+  parseActivity,
   getFollowUpQueue,
   getNewContactsQueue,
 } from '@/lib/sheets';
@@ -9,6 +10,7 @@ import {
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 const API_KEY = process.env.GOOGLE_SHEETS_API_KEY!;
 const INTERVAL = parseInt(process.env.FOLLOW_UP_INTERVAL_DAYS || '14');
+const DAILY_NEW_GOAL = parseInt(process.env.DAILY_NEW_GOAL || '25');
 
 async function fetchRange(range: string) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
@@ -23,13 +25,15 @@ async function fetchRange(range: string) {
 
 export async function GET() {
   try {
-    const [connectionRows, messageRows] = await Promise.all([
+    const [connectionRows, messageRows, activityRows] = await Promise.all([
       fetchRange('Connections'),
       fetchRange('Messages'),
+      fetchRange('Activity').catch(() => [] as string[][]),
     ]);
 
     const contacts = parseConnections(connectionRows);
     const messages = parseMessages(messageRows);
+    const activity = parseActivity(activityRows);
 
     const followUps = getFollowUpQueue(contacts, INTERVAL);
     const newContacts = getNewContactsQueue(contacts);
@@ -39,7 +43,9 @@ export async function GET() {
       newContacts,
       messages,
       allContacts: contacts,
+      activity,
       intervalDays: INTERVAL,
+      dailyNewGoal: DAILY_NEW_GOAL,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

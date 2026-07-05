@@ -82,6 +82,26 @@ export function parseConnections(rows: string[][]): Contact[] {
   }));
 }
 
+// Activity tab: A Date | B Row | C Name | D Company | E Action | F Template | G Detail
+export interface ActivityEvent {
+  date: string;
+  rowIndex: number;
+  action: string; // 'new' | 'followup1' | 'followup2' | 'followup3' | 'reply'
+  template: string;
+}
+
+export function parseActivity(rows: string[][]): ActivityEvent[] {
+  return rows
+    .slice(1)
+    .map(row => ({
+      date: (row[0] || '').trim(),
+      rowIndex: parseInt(row[1]) || 0,
+      action: (row[4] || '').trim().toLowerCase(),
+      template: (row[5] || '').trim(),
+    }))
+    .filter(e => e.date && e.action);
+}
+
 export function parseMessages(rows: string[][]): Message[] {
   return rows.slice(1).map(row => ({
     messageType: (row[0] || '').trim(),
@@ -296,6 +316,8 @@ export interface StageRate {
 
 export interface Stats {
   todayCount: number;
+  todayNew: number;
+  todayFollowUps: number;
   streak: number;
   thisWeek: WeekBucket;
   lastWeek: WeekBucket;
@@ -319,10 +341,8 @@ function weekLabel(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function contactStage(c: Contact): 'new' | 'followup' {
@@ -333,7 +353,7 @@ function emptyBucket(weekStart: Date): WeekBucket {
   return { weekStart, label: weekLabel(weekStart), newOutreach: 0, followUps: 0, total: 0 };
 }
 
-export function getStats(contacts: Contact[]): Stats {
+export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], dailyNewGoal = 25): Stats {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -345,18 +365,44 @@ export function getStats(contacts: Contact[]): Stats {
     buckets.unshift(emptyBucket(ws));
   }
 
-  let todayCount = 0;
-  const touchedDays = new Set<string>();
+  // Merge activity log with lastContacted-derived events.
+  // Log wins on same contact+day, so re-touches don't erase history and
+  // events aren't double-counted during the transition period.
+  const logged = new Set<string>();
+  const events: { date: Date; stage: 'new' | 'followup' }[] = [];
+
+  const logDates = activity
+    .filter(a => a.action !== 'reply')
+    .map(a => parseDate(a.date))
+    .filter((d): d is Date => !!d);
+  const firstLogTime = logDates.length ? Math.min(...logDates.map(d => d.getTime())) : null;
+
+  activity.forEach(a => {
+    if (a.action === 'reply') return;
+    const d = parseDate(a.date);
+    if (!d) return;
+    const key = `${a.rowIndex}|${dayKey(d)}`;
+    if (logged.has(key)) return;
+    logged.add(key);
+    events.push({ date: d, stage: a.action === 'new' ? 'new' : 'followup' });
+  });
 
   contacts.forEach(c => {
     const d = parseDate(c.lastContacted);
     if (!d) return;
-    const stage = contactStage(c);
+    if (logged.has(`${c.rowIndex}|${dayKey(d)}`)) return;
+    events.push({ date: d, stage: contactStage(c) });
+  });
 
-    if (sameDay(d, today)) todayCount++;
-    touchedDays.add(d.toISOString().slice(0, 10));
+  const dayNew: Record<string, number> = {};
+  const dayFollowUp: Record<string, number> = {};
 
-    const ws = getWeekStart(d);
+  events.forEach(({ date, stage }) => {
+    const k = dayKey(date);
+    if (stage === 'new') dayNew[k] = (dayNew[k] || 0) + 1;
+    else dayFollowUp[k] = (dayFollowUp[k] || 0) + 1;
+
+    const ws = getWeekStart(date);
     const bucket = buckets.find(b => b.weekStart.getTime() === ws.getTime());
     if (!bucket) return;
 
@@ -365,16 +411,25 @@ export function getStats(contacts: Contact[]): Stats {
     else bucket.followUps++;
   });
 
-  // Streak: consecutive days from today backwards
+  const todayNew = dayNew[dayKey(today)] || 0;
+  const todayFollowUps = dayFollowUp[dayKey(today)] || 0;
+
+  // Streak: goal-based once the activity log exists; any-activity for
+  // days before it (history from lastContacted can't measure daily volume)
+  const qualifies = (d: Date): boolean => {
+    const k = dayKey(d);
+    if (firstLogTime !== null && d.getTime() >= firstLogTime) {
+      return (dayNew[k] || 0) >= dailyNewGoal;
+    }
+    return (dayNew[k] || 0) + (dayFollowUp[k] || 0) >= 1;
+  };
+
   let streak = 0;
   const cursor = new Date(today);
-  while (true) {
-    if (touchedDays.has(cursor.toISOString().slice(0, 10))) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
+  if (!qualifies(cursor)) cursor.setDate(cursor.getDate() - 1); // today still in progress
+  while (qualifies(cursor)) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
   }
 
   const thisWeek = buckets[5];
@@ -403,7 +458,9 @@ export function getStats(contacts: Contact[]): Stats {
   });
 
   return {
-    todayCount,
+    todayCount: todayNew + todayFollowUps,
+    todayNew,
+    todayFollowUps,
     streak,
     thisWeek,
     lastWeek,
