@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Contact, Message, SuggestedMessage, ActivityEvent,
   suggestMessage, daysAgo, parseDate, todayDMY,
-  getMessageStats, MessageStats, POSITIVE_REPLIES,
+  getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
   getStats, Stats,
 } from '@/lib/sheets';
 
@@ -488,7 +488,7 @@ export default function OutreachApp() {
 
     if (becameInterested && prevContact) {
       const s = creditedTemplate
-        ? getMessageStats(updatedAll, data.messages).find(m => m.abbreviation === creditedTemplate)
+        ? getMessageStats(updatedAll, data.messages).find(m => normAbbr(m.abbreviation) === normAbbr(creditedTemplate))
         : undefined;
       setCelebration({
         title: '🎉 Interested!',

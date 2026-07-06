@@ -123,6 +123,18 @@ export function countsForReplyRate(c: Contact): boolean {
   return days !== null && days >= REPLY_WINDOW_DAYS;
 }
 
+// Template abbreviations in Connections have case/punctuation variants
+// ("One-off" / "one-off" / "One off") — compare normalized
+export function normAbbr(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// "One-off" is a placeholder for custom messages, not a real template —
+// it stays in stats for comparison but is never suggested
+function isOneOff(abbr: string): boolean {
+  return normAbbr(abbr) === 'oneoff';
+}
+
 // Replies that still warrant a follow-up, in priority order
 const FOLLOW_UP_WORTHY = ['interested', 'yes', '', 'referred'];
 const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2, referred: 3 };
@@ -199,11 +211,11 @@ export function suggestMessage(
 ): SuggestedMessage | null {
   // Never suggest a template this contact has already received
   const alreadySent = new Set(
-    [contact.message, contact.followUpMessage1, contact.followUpMessage2].filter(Boolean)
+    [contact.message, contact.followUpMessage1, contact.followUpMessage2].filter(Boolean).map(normAbbr)
   );
   const wantedType = isFollowUp ? 'Follow Up' : 'Initial Outreach';
   const candidates = messages.filter(
-    m => m.messageType === wantedType && !alreadySent.has(m.abbreviation)
+    m => m.messageType === wantedType && !alreadySent.has(normAbbr(m.abbreviation)) && !isOneOff(m.abbreviation)
   );
   if (candidates.length === 0) return null;
 
@@ -233,8 +245,8 @@ export function suggestMessage(
       (func && cFunc === func);
 
     abbrs.forEach(abbr => {
-      bump(overallStats, abbr, isPositive);
-      if (isSimilar) bump(similarStats, abbr, isPositive);
+      bump(overallStats, normAbbr(abbr), isPositive);
+      if (isSimilar) bump(similarStats, normAbbr(abbr), isPositive);
     });
   });
 
@@ -242,7 +254,7 @@ export function suggestMessage(
     let best: string | null = null;
     let bestRate = -1;
     candidates.forEach(m => {
-      const s = stats[m.abbreviation];
+      const s = stats[normAbbr(m.abbreviation)];
       if (!s || s.sent < 2) return; // need at least 2 data points
       const rate = s.replied / s.sent;
       if (rate > bestRate) {
@@ -257,7 +269,7 @@ export function suggestMessage(
   const chosenAbbr = pickBest(similarStats) || pickBest(overallStats) || candidates[0].abbreviation;
   const messageRecord = candidates.find(m => m.abbreviation === chosenAbbr)!;
 
-  const s = similarStats[chosenAbbr] ?? overallStats[chosenAbbr];
+  const s = similarStats[normAbbr(chosenAbbr)] ?? overallStats[normAbbr(chosenAbbr)];
   const replyRate = s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null;
 
   return {
@@ -292,14 +304,15 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
     if (!countsForReplyRate(c)) return;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
     [c.message, c.followUpMessage1, c.followUpMessage2].filter(Boolean).forEach(abbr => {
-      if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
-      stats[abbr].sent++;
-      if (isPositive) stats[abbr].replied++;
+      const key = normAbbr(abbr);
+      if (!stats[key]) stats[key] = { sent: 0, replied: 0 };
+      stats[key].sent++;
+      if (isPositive) stats[key].replied++;
     });
   });
 
   return messages.map(m => {
-    const s = stats[m.abbreviation];
+    const s = stats[normAbbr(m.abbreviation)];
     return {
       abbreviation: m.abbreviation,
       sent: s?.sent ?? 0,
