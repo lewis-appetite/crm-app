@@ -116,6 +116,7 @@ Writes go through the Apps Script web app — the API key is read-only. The key 
 
 ## Planned Changes (Phase 2/3 of gamification)
 
+- **True reply attribution** — currently a positive reply credits every template in the contact's sequence (Reply col has no timestamp, so we can't know which message triggered it). Once the Activity log accumulates, attribute each `reply` event to the last message sent to that contact before the reply date. Keep sequence-credit as fallback for pre-log contacts.
 - **Explore/exploit nudges** — occasionally suggest under-tested templates ("only 4 sends, needs data") so new messages get sample size
 - **Messages tab** — confidence indicators on reply rates + week-over-week trend arrows (needs Activity log data to accumulate)
 - **Streak polish** — streak-at-risk warning, milestone badges, personal bests
