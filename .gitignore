@@ -34,3 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# spreadsheet exports (not part of the app)
+*.xlsx
+~$*
