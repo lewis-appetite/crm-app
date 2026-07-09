@@ -17,6 +17,8 @@ export interface Contact {
   followUpMessage2: string;
   lastContacted: string;
   comment: string;
+  email: string;
+  phone: string;
 }
 
 export interface Message {
@@ -51,6 +53,8 @@ const COL = {
   FOLLOW_UP_MESSAGE_2: 12,
   LAST_CONTACTED: 13,
   COMMENT: 14,
+  EMAIL: 15,
+  PHONE: 16,
 };
 
 // Column letters for Sheets API updates (1-based column letters)
@@ -79,15 +83,24 @@ export function parseConnections(rows: string[][]): Contact[] {
     followUpMessage2: (row[COL.FOLLOW_UP_MESSAGE_2] || '').trim(),
     lastContacted: (row[COL.LAST_CONTACTED] || '').trim(),
     comment: (row[COL.COMMENT] || '').trim(),
+    email: cleanContactField(row[COL.EMAIL]),
+    phone: cleanContactField(row[COL.PHONE]),
   }));
+}
+
+// "Not Found" / "None" placeholders from manual research sheets shouldn't be treated as real values
+function cleanContactField(v: string | undefined): string {
+  const s = (v || '').trim();
+  return /^(not found|none|n\/a)$/i.test(s) ? '' : s;
 }
 
 // Activity tab: A Date | B Row | C Name | D Company | E Action | F Template | G Detail
 export interface ActivityEvent {
   date: string;
   rowIndex: number;
-  action: string; // 'new' | 'followup1' | 'followup2' | 'followup3' | 'reply'
+  action: string; // 'new' | 'followup1' | 'followup2' | 'followup3' | 'reply' | 'snooze'
   template: string;
+  detail: string;
 }
 
 export function parseActivity(rows: string[][]): ActivityEvent[] {
@@ -98,8 +111,27 @@ export function parseActivity(rows: string[][]): ActivityEvent[] {
       rowIndex: parseInt(row[1]) || 0,
       action: (row[4] || '').trim().toLowerCase(),
       template: (row[5] || '').trim(),
+      detail: (row[6] || '').trim(),
     }))
     .filter(e => e.date && e.action);
+}
+
+// Campaigns tab: A Company | B Status | C Cake sent (date)
+export interface CampaignEntry {
+  company: string;
+  status: string;
+  cakeSentDate: string;
+}
+
+export function parseCampaigns(rows: string[][]): CampaignEntry[] {
+  return rows
+    .slice(1)
+    .map(row => ({
+      company: (row[0] || '').trim(),
+      status: (row[1] || '').trim(),
+      cakeSentDate: (row[2] || '').trim(),
+    }))
+    .filter(c => c.company);
 }
 
 export function parseMessages(rows: string[][]): Message[] {
@@ -201,6 +233,110 @@ export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Con
 
 export function getNewContactsQueue(contacts: Contact[]): Contact[] {
   return contacts.filter(c => !c.message && !c.lastContacted && !isDead(c));
+}
+
+// Same normalization used for cake-image filename matching — reused here so
+// Campaigns tab company names match Connections company names consistently
+export function normalizeCompany(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const CLOSED_CAMPAIGN_STATUSES = ['closed', 'won', 'lost', 'dead'];
+
+// No "Next Follow-up Date" column exists, so snoozing a Today-view contact
+// is recorded as an Activity log entry instead — the most recent 'snooze'
+// action per contact holds the date they should reappear
+export function getActiveSnoozes(activity: ActivityEvent[]): Record<number, Date> {
+  const result: Record<number, Date> = {};
+  activity.forEach(a => {
+    if (a.action !== 'snooze') return;
+    const until = parseDate(a.detail);
+    if (until) result[a.rowIndex] = until;
+  });
+  return result;
+}
+
+export type Tier = 1 | 2 | 3;
+
+export interface TierContact extends Contact {
+  tier: Tier;
+  overdueDays: number | null;
+}
+
+export interface CompanyGroup {
+  company: string;
+  tier: Tier;
+  contacts: TierContact[];
+  maxOverdueDays: number | null;
+}
+
+// Unified "Today" queue: groups due follow-ups by company into three
+// priority tiers — cake-campaign accounts always surface first regardless
+// of normal follow-up cadence, since they represent live pipeline
+export function getTodayQueue(
+  contacts: Contact[],
+  campaigns: CampaignEntry[],
+  followUpIntervalDays: number,
+  goneColdDays: number,
+  snoozes: Record<number, Date> = {}
+): CompanyGroup[] {
+  const cakeCompanies = new Set(
+    campaigns
+      .filter(c => !CLOSED_CAMPAIGN_STATUSES.includes(c.status.toLowerCase()))
+      .map(c => normalizeCompany(c.company))
+  );
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const groups = new Map<string, CompanyGroup>();
+
+  contacts.forEach(c => {
+    if (isDead(c)) return;
+    if (!c.company) return;
+    const snoozedUntil = snoozes[c.rowIndex];
+    if (snoozedUntil && snoozedUntil.getTime() >= today.getTime()) return;
+
+    const isCakeCompany = cakeCompanies.has(normalizeCompany(c.company));
+    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
+    const days = daysAgo(c.lastContacted);
+
+    let tier: Tier | null = null;
+    let overdueDays: number | null = null;
+
+    if (isCakeCompany) {
+      tier = 1;
+      overdueDays = days !== null ? days - goneColdDays : null;
+    } else if (isPositive && days !== null && days >= goneColdDays) {
+      tier = 2;
+      overdueDays = days - goneColdDays;
+    } else if (!c.reply && c.message && days !== null && days >= followUpIntervalDays) {
+      tier = 3;
+      overdueDays = days - followUpIntervalDays;
+    }
+
+    if (tier === null) return;
+
+    const key = normalizeCompany(c.company);
+    if (!groups.has(key)) {
+      groups.set(key, { company: c.company, tier, contacts: [], maxOverdueDays: null });
+    }
+    const group = groups.get(key)!;
+    if (tier < group.tier) group.tier = tier;
+    group.contacts.push({ ...c, tier, overdueDays });
+  });
+
+  const result = Array.from(groups.values());
+  result.forEach(g => {
+    g.contacts.sort((a, b) => a.tier - b.tier || (b.overdueDays ?? -Infinity) - (a.overdueDays ?? -Infinity));
+    g.maxOverdueDays = g.contacts.reduce<number | null>(
+      (max, c) => (c.overdueDays !== null && (max === null || c.overdueDays > max) ? c.overdueDays : max),
+      null
+    );
+  });
+  result.sort((a, b) => a.tier - b.tier || (b.maxOverdueDays ?? -Infinity) - (a.maxOverdueDays ?? -Infinity));
+
+  return result;
 }
 
 export function suggestMessage(

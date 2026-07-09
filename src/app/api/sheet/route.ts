@@ -3,14 +3,18 @@ import {
   parseConnections,
   parseMessages,
   parseActivity,
+  parseCampaigns,
   getFollowUpQueue,
   getNewContactsQueue,
+  getTodayQueue,
+  getActiveSnoozes,
 } from '@/lib/sheets';
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 const API_KEY = process.env.GOOGLE_SHEETS_API_KEY!;
 const INTERVAL = parseInt(process.env.FOLLOW_UP_INTERVAL_DAYS || '14');
 const DAILY_NEW_GOAL = parseInt(process.env.DAILY_NEW_GOAL || '25');
+const GONE_COLD_DAYS = parseInt(process.env.GONE_COLD_DAYS || '8');
 
 async function fetchRange(range: string) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
@@ -25,25 +29,31 @@ async function fetchRange(range: string) {
 
 export async function GET() {
   try {
-    const [connectionRows, messageRows, activityRows] = await Promise.all([
+    const [connectionRows, messageRows, activityRows, campaignRows] = await Promise.all([
       fetchRange('Connections'),
       fetchRange('Messages'),
       fetchRange('Activity').catch(() => [] as string[][]),
+      fetchRange('Campaigns').catch(() => [] as string[][]),
     ]);
 
     const contacts = parseConnections(connectionRows);
     const messages = parseMessages(messageRows);
     const activity = parseActivity(activityRows);
+    const campaigns = parseCampaigns(campaignRows);
 
     const followUps = getFollowUpQueue(contacts, INTERVAL);
     const newContacts = getNewContactsQueue(contacts);
+    const snoozes = getActiveSnoozes(activity);
+    const today = getTodayQueue(contacts, campaigns, INTERVAL, GONE_COLD_DAYS, snoozes);
 
     return NextResponse.json({
       followUps,
       newContacts,
+      today,
       messages,
       allContacts: contacts,
       activity,
+      campaigns,
       intervalDays: INTERVAL,
       dailyNewGoal: DAILY_NEW_GOAL,
     });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Contact, Message, SuggestedMessage, ActivityEvent,
+  Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier,
   suggestMessage, daysAgo, parseDate, todayDMY,
   getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
   getStats, Stats,
@@ -22,6 +22,7 @@ import styles from './OutreachApp.module.css';
 interface SheetData {
   followUps: Contact[];
   newContacts: Contact[];
+  today: CompanyGroup[];
   messages: Message[];
   allContacts: Contact[];
   activity: ActivityEvent[];
@@ -29,7 +30,15 @@ interface SheetData {
   dailyNewGoal: number;
 }
 
-type Tab = 'followup' | 'new' | 'messages' | 'cake' | 'connections' | 'stats';
+type Tab = 'followup' | 'new' | 'today' | 'messages' | 'cake' | 'connections' | 'stats';
+
+const TIER_LABELS: Record<Tier, string> = {
+  1: 'Cake sent',
+  2: 'Interested, gone cold',
+  3: 'Chasing silence',
+};
+const TIER_ICONS: Record<Tier, string> = { 1: '\u{1F382}', 2: '\u{1F525}', 3: '\u{1F4E8}' };
+const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm', 3: 'tierCold' };
 type NewSort = 'recent' | 'oldest' | 'az';
 type MessagesView = 'cards' | 'table';
 
@@ -122,6 +131,12 @@ export default function OutreachApp() {
   const [newFilterList, setNewFilterList] = useState('');
   const [newFilterFunction, setNewFilterFunction] = useState('');
 
+  // Today tab
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
+  const seededExpand = useRef(false);
+  const [tierFilter, setTierFilter] = useState<Tier | null>(null);
+  const [activeMenu, setActiveMenu] = useState<{ rowIndex: number; type: 'snooze' | 'replied' } | null>(null);
+
   // Message picker on contact card
   const [selectedMessage, setSelectedMessage] = useState('');
 
@@ -212,6 +227,12 @@ export default function OutreachApp() {
     return () => clearTimeout(t);
   }, [celebration]);
 
+  useEffect(() => {
+    if (seededExpand.current || !data?.today || data.today.length === 0) return;
+    seededExpand.current = true;
+    setExpandedCompanies(new Set([data.today[0].company]));
+  }, [data]);
+
   // Build cake image lookup map
   const cakeImageMap: Record<string, CakeImage> = Object.fromEntries(
     cakeImages.map(img => [normalizeForMatch(img.name), img])
@@ -301,6 +322,11 @@ export default function OutreachApp() {
       : m.messageType === 'Follow Up'
   ) ?? [];
 
+  const todayGroups: CompanyGroup[] = (data?.today ?? [])
+    .map(g => ({ ...g, contacts: g.contacts.filter(c => !dismissed.has(c.rowIndex)) }))
+    .filter(g => g.contacts.length > 0);
+  const todayContactCount = todayGroups.reduce((n, g) => n + g.contacts.length, 0);
+
   async function updateSheet(
     rowIndex: number,
     cells: { col: string; value: string }[],
@@ -343,6 +369,59 @@ export default function OutreachApp() {
     window.open(c.url, '_blank');
   }
 
+  function handleEmailContact(c: Contact) {
+    if (!c.email) return;
+    window.location.href = `mailto:${c.email}`;
+  }
+
+  async function handleTodayDone(c: Contact) {
+    const isFollowUp = !!c.message;
+    const newCount = isFollowUp ? (parseInt(c.followUps) || 0) + 1 : null;
+    const cells: { col: string; value: string }[] = [{ col: 'N', value: todayDMY() }];
+    if (newCount !== null) cells.push({ col: 'K', value: String(newCount) });
+
+    await updateSheet(c.rowIndex, cells, {
+      action: isFollowUp ? `followup${Math.min(newCount ?? 1, 3)}` : 'new',
+      name: c.fullName,
+      company: c.company,
+    });
+    setDismissed(prev => new Set(prev).add(c.rowIndex));
+  }
+
+  async function handleSnooze(c: Contact, days: number) {
+    const until = new Date();
+    until.setDate(until.getDate() + days);
+    const untilStr = `${String(until.getDate()).padStart(2, '0')}/${String(until.getMonth() + 1).padStart(2, '0')}/${until.getFullYear()}`;
+
+    await updateSheet(c.rowIndex, [], {
+      action: 'snooze',
+      detail: untilStr,
+      name: c.fullName,
+      company: c.company,
+    });
+    setDismissed(prev => new Set(prev).add(c.rowIndex));
+    setActiveMenu(null);
+  }
+
+  async function handleReplied(c: Contact, value: 'Interested' | 'Not interested') {
+    await updateSheet(c.rowIndex, [{ col: 'J', value }], {
+      action: 'reply',
+      detail: value,
+      name: c.fullName,
+      company: c.company,
+    });
+    setData(prev => {
+      if (!prev) return prev;
+      const upd = (x: Contact) => (x.rowIndex !== c.rowIndex ? x : { ...x, reply: value });
+      return { ...prev, allContacts: prev.allContacts.map(upd) };
+    });
+    setDismissed(prev => new Set(prev).add(c.rowIndex));
+    setActiveMenu(null);
+    if (value === 'Interested') {
+      setCelebration({ title: '\u{1F389} Interested!', detail: `${c.fullName} at ${c.company} is interested` });
+    }
+  }
+
   async function handleAction(action: 'contacted' | 'dead') {
     if (!contact || actionLoading) return;
     setActionLoading(true);
@@ -372,7 +451,7 @@ export default function OutreachApp() {
 
       setLocalEvents(prev => [
         ...prev,
-        { date: todayDMY(), rowIndex: c.rowIndex, action: actionType, template: templateUsed },
+        { date: todayDMY(), rowIndex: c.rowIndex, action: actionType, template: templateUsed, detail: '' },
       ]);
       setData(prev => {
         if (!prev) return prev;
@@ -605,6 +684,10 @@ export default function OutreachApp() {
           <button className={`${styles.tab} ${tab === 'new' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('new')}>
             New
             <span className={styles.tabCount}>{data ? sortedNewContacts.filter(c => !dismissed.has(c.rowIndex)).length : 0}</span>
+          </button>
+          <button className={`${styles.tab} ${tab === 'today' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('today')}>
+            Today
+            <span className={styles.tabCount}>{todayContactCount}</span>
           </button>
           <button className={`${styles.tab} ${tab === 'messages' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('messages')}>
             Messages
@@ -1021,6 +1104,133 @@ export default function OutreachApp() {
                   );
                 })
               )}
+            </div>
+          );
+        })()
+
+        /* ── TODAY TAB ── */
+        : tab === 'today' ? (() => {
+          const tierCounts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0 };
+          todayGroups.forEach(g => g.contacts.forEach(c => { tierCounts[c.tier]++; }));
+          const visibleGroups = tierFilter
+            ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
+            : todayGroups;
+
+          if (todayGroups.length === 0) {
+            return (
+              <div className={styles.emptyState}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <p>All caught up</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className={styles.todayPage}>
+              <div className={styles.tierChipsRow}>
+                {([1, 2, 3] as Tier[]).map(t => (
+                  <button
+                    key={t}
+                    className={`${styles.tierChip} ${styles[TIER_STYLE[t]]} ${tierFilter === t ? styles.tierChipActive : ''}`}
+                    onClick={() => setTierFilter(f => (f === t ? null : t))}
+                  >
+                    {TIER_ICONS[t]} {tierCounts[t]}
+                  </button>
+                ))}
+              </div>
+
+              {visibleGroups.map(g => {
+                const isExpanded = expandedCompanies.has(g.company);
+                return (
+                  <div key={g.company} className={styles.companyCard}>
+                    <div
+                      className={styles.companyHeader}
+                      onClick={() => setExpandedCompanies(prev => {
+                        const next = new Set(prev);
+                        if (next.has(g.company)) next.delete(g.company); else next.add(g.company);
+                        return next;
+                      })}
+                    >
+                      <span className={styles.companyName}>{g.company}</span>
+                      <span className={`${styles.companyTierBadge} ${styles[TIER_STYLE[g.tier]]}`}>
+                        {TIER_ICONS[g.tier]} {TIER_LABELS[g.tier]}
+                      </span>
+                      {g.maxOverdueDays !== null && g.maxOverdueDays > 0 && (
+                        <span className={styles.overdueBadge}>+{g.maxOverdueDays}d</span>
+                      )}
+                      <span className={styles.companyDueCount}>{g.contacts.length} due</span>
+                      <svg className={`${styles.expandIcon} ${isExpanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </div>
+
+                    {isExpanded && (
+                      <div className={styles.companyContacts}>
+                        {g.contacts.map(c => {
+                          const initials = `${c.firstName[0] ?? ''}${c.lastName[0] ?? ''}`.toUpperCase();
+                          const menu = activeMenu?.rowIndex === c.rowIndex ? activeMenu.type : null;
+                          return (
+                            <div key={c.rowIndex} className={styles.todayContact}>
+                              <div className={styles.todayContactTop}>
+                                <div className={styles.todayAvatar}>{initials}</div>
+                                <div className={styles.todayContactMeta}>
+                                  <div className={styles.todayContactNameRow}>
+                                    <span className={styles.todayContactName}>{c.fullName}</span>
+                                    {c.url && <i className={styles.channelDot} title="LinkedIn" />}
+                                  </div>
+                                  <span className={styles.todayContactSub}>
+                                    {c.position}{c.position && (c.lastContacted || c.reply) ? ' · ' : ''}
+                                    {c.lastContacted ? `${daysAgo(c.lastContacted)}d ago` : c.reply || 'never contacted'}
+                                  </span>
+                                </div>
+                                {c.overdueDays !== null && c.overdueDays > 0 && (
+                                  <span className={styles.todayOverdue}>+{c.overdueDays}d</span>
+                                )}
+                              </div>
+
+                              {menu === 'snooze' ? (
+                                <div className={styles.todayMenuRow}>
+                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 1)}>1 day</button>
+                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 3)}>3 days</button>
+                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 7)}>1 week</button>
+                                  <button className={styles.todayMenuBtn} onClick={() => setActiveMenu(null)}>Cancel</button>
+                                </div>
+                              ) : menu === 'replied' ? (
+                                <div className={styles.todayMenuRow}>
+                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`} onClick={() => handleReplied(c, 'Interested')}>Interested</button>
+                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuRed}`} onClick={() => handleReplied(c, 'Not interested')}>Not interested</button>
+                                  <button className={styles.todayMenuBtn} onClick={() => setActiveMenu(null)}>Cancel</button>
+                                </div>
+                              ) : (
+                                <div className={styles.todayActionsRow}>
+                                  <button className={`${styles.todayActionBtn} ${styles.todayActionGreen}`} onClick={() => handleTodayDone(c)}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    Done
+                                  </button>
+                                  <button className={styles.todayActionBtn} onClick={() => setActiveMenu({ rowIndex: c.rowIndex, type: 'snooze' })}>Snooze</button>
+                                  <button className={styles.todayActionBtn} onClick={() => setActiveMenu({ rowIndex: c.rowIndex, type: 'replied' })}>Replied</button>
+                                  {c.url ? (
+                                    <button className={styles.todayChannelBtn} onClick={() => handleLinkedIn(c)} aria-label="Open LinkedIn">
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                    </button>
+                                  ) : c.email ? (
+                                    <button className={styles.todayChannelBtn} onClick={() => handleEmailContact(c)} aria-label="Email">
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                                    </button>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })()

@@ -1513,3 +1513,215 @@
 .syncRetryBtn:disabled {
   opacity: 0.5;
 }
+
+/* ── Today tab ── */
+
+.todayPage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tierChipsRow {
+  display: flex;
+  gap: 8px;
+}
+
+.tierChip {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  padding: 6px 11px;
+  border-radius: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  transition: opacity 0.15s;
+}
+
+.tierChipActive {
+  opacity: 1;
+}
+
+.tierChip:not(.tierChipActive) {
+  opacity: 0.55;
+}
+
+.tierCake { background: var(--amber-bg); border-color: rgba(251, 191, 36, 0.35); color: var(--amber); }
+.tierWarm { background: var(--green-bg); border-color: rgba(74, 222, 128, 0.2); color: var(--green); }
+.tierCold { background: var(--blue-bg); border-color: rgba(96, 165, 250, 0.2); color: var(--blue); }
+
+.companyCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.companyHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.companyName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.companyTierBadge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.companyDueCount {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.companyContacts {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.todayContact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todayContactTop {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.todayAvatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.todayContactMeta {
+  min-width: 0;
+  flex: 1;
+}
+
+.todayContactNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.todayContactName {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.channelDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex-shrink: 0;
+}
+
+.todayContactSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todayOverdue {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+.todayActionsRow {
+  display: flex;
+  gap: 6px;
+}
+
+.todayActionBtn {
+  flex: 1;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.todayActionGreen {
+  background: var(--green-bg);
+  border-color: rgba(74, 222, 128, 0.2);
+  color: var(--green);
+}
+
+.todayChannelBtn {
+  width: 34px;
+  flex-shrink: 0;
+  padding: 8px 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.todayMenuRow {
+  display: flex;
+  gap: 6px;
+}
+
+.todayMenuBtn {
+  flex: 1;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.todayMenuGreen {
+  background: var(--green-bg);
+  border-color: rgba(74, 222, 128, 0.2);
+  color: var(--green);
+}
+
+.todayMenuRed {
+  background: var(--red-bg);
+  border-color: rgba(248, 113, 113, 0.2);
+  color: var(--red);
+}
