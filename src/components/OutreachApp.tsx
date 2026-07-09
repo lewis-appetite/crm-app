@@ -162,7 +162,43 @@ export default function OutreachApp() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Background refresh on return-to-app: no spinner, no reset of
+  // index/dismissed/combo — just pulls in any changes made elsewhere
+  const silentRefresh = useCallback(async () => {
+    try {
+      const [sheetRes, cakeRes] = await Promise.all([
+        fetch('/api/sheet'),
+        fetch('/api/cake-images'),
+      ]);
+      const json = await sheetRes.json();
+      if (json.error) return;
+      setData(json);
+      const cakeJson = await cakeRes.json();
+      if (!cakeJson.error) setCakeImages(cakeJson.images ?? []);
+    } catch {
+      // keep showing stale data rather than erroring out a background refresh
+    }
+  }, []);
+
+  const lastLoadedAt = useRef(0);
+  const silentRefreshRef = useRef(silentRefresh);
+  silentRefreshRef.current = silentRefresh;
+
+  useEffect(() => {
+    load();
+    lastLoadedAt.current = Date.now();
+  }, [load]);
+
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastLoadedAt.current < 60_000) return;
+      lastLoadedAt.current = Date.now();
+      silentRefreshRef.current();
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   useEffect(() => {
     setCopied(false);
