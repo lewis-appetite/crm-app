@@ -481,6 +481,9 @@ export default function OutreachApp() {
       return { ...prev, campaigns };
     });
     await updateCampaign(company, { status: 'Cake sent' });
+    // the watched-company change affects Today's tier grouping, which is
+    // computed server-side — refetch so the new company's contacts appear
+    await silentRefresh();
   }
 
   async function handleRemoveCompany(company: string) {
@@ -489,6 +492,7 @@ export default function OutreachApp() {
       return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status: 'Closed' } : c)) };
     });
     await updateCampaign(company, { status: 'Closed' });
+    await silentRefresh();
   }
 
   async function handleSaveCompanyNotes(company: string, notes: string) {
