@@ -143,7 +143,9 @@ export function parseMessages(rows: string[][]): Message[] {
   }));
 }
 
-export const POSITIVE_REPLIES = ['interested', 'yes', 'referred'];
+// 'referred' means the contact pointed us elsewhere, not that they're
+// personally interested — excluded from positive-reply stats and follow-ups
+export const POSITIVE_REPLIES = ['interested', 'yes'];
 
 // Contacts messaged recently who haven't replied yet shouldn't drag down
 // reply rates — they haven't had a fair chance to respond
@@ -168,8 +170,8 @@ function isOneOff(abbr: string): boolean {
 }
 
 // Replies that still warrant a follow-up, in priority order
-const FOLLOW_UP_WORTHY = ['interested', 'yes', '', 'referred'];
-const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2, referred: 3 };
+const FOLLOW_UP_WORTHY = ['interested', 'yes', ''];
+const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2 };
 
 export function isDead(contact: Contact): boolean {
   return !FOLLOW_UP_WORTHY.includes(contact.reply.toLowerCase());
