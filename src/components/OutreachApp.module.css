@@ -1637,11 +1637,15 @@
   color: var(--text);
 }
 
-.channelDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--blue);
+.channelIcons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.channelIcon {
+  color: var(--text-dim);
   flex-shrink: 0;
 }
 
