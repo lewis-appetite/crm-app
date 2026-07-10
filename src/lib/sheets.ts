@@ -116,11 +116,12 @@ export function parseActivity(rows: string[][]): ActivityEvent[] {
     .filter(e => e.date && e.action);
 }
 
-// Campaigns tab: A Company | B Status | C Cake sent (date)
+// Campaigns tab: A Company | B Status | C Cake sent (date) | D Notes
 export interface CampaignEntry {
   company: string;
   status: string;
   cakeSentDate: string;
+  notes: string;
 }
 
 export function parseCampaigns(rows: string[][]): CampaignEntry[] {
@@ -130,6 +131,7 @@ export function parseCampaigns(rows: string[][]): CampaignEntry[] {
       company: (row[0] || '').trim(),
       status: (row[1] || '').trim(),
       cakeSentDate: (row[2] || '').trim(),
+      notes: (row[3] || '').trim(),
     }))
     .filter(c => c.company);
 }

@@ -40,13 +40,14 @@ function doPost(e) {
       var found = false;
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][0]).trim().toLowerCase() === target) {
-          campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+          if (body.campaign.status !== undefined) campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+          if (body.campaign.notes !== undefined) campSheet.getRange(i + 1, 4).setValue(body.campaign.notes);
           found = true;
           break;
         }
       }
       if (!found) {
-        campSheet.appendRow([body.campaign.company, body.campaign.status, '']);
+        campSheet.appendRow([body.campaign.company, body.campaign.status || '', '', body.campaign.notes || '']);
       }
     }
   }

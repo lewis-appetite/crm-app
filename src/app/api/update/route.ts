@@ -14,7 +14,7 @@ interface UpdatePayload {
   rowIndex?: number;
   cells?: { col: string; value: string }[];
   log?: LogEntry;
-  campaign?: { company: string; status: string };
+  campaign?: { company: string; status?: string; notes?: string };
 }
 
 export async function POST(req: NextRequest) {

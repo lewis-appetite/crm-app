@@ -56,7 +56,7 @@ interface UpdateBody {
     template: string;
     detail: string;
   };
-  campaign?: { company: string; status: string };
+  campaign?: { company: string; status?: string; notes?: string };
 }
 
 async function postUpdate(payload: UpdateBody): Promise<boolean> {
@@ -140,6 +140,7 @@ export default function OutreachApp() {
   const [manageOpen, setManageOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
+  const [companyNotesDrafts, setCompanyNotesDrafts] = useState<Record<string, string>>({});
 
   // Message picker on contact card
   const [selectedMessage, setSelectedMessage] = useState('');
@@ -355,8 +356,8 @@ export default function OutreachApp() {
     if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
 
-  async function updateCampaign(company: string, status: string) {
-    const payload: UpdateBody = { campaign: { company, status } };
+  async function updateCampaign(company: string, updates: { status?: string; notes?: string }) {
+    const payload: UpdateBody = { campaign: { company, ...updates } };
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
@@ -467,8 +468,8 @@ export default function OutreachApp() {
     }
   }
 
-  async function handleAddCompany() {
-    const company = newCompanyName.trim();
+  async function handleAddCompany(companyArg?: string) {
+    const company = (companyArg ?? newCompanyName).trim();
     if (!company) return;
     setNewCompanyName('');
     setData(prev => {
@@ -476,10 +477,10 @@ export default function OutreachApp() {
       const existing = prev.campaigns.find(c => normAbbr(c.company) === normAbbr(company));
       const campaigns = existing
         ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Cake sent' } : c))
-        : [...prev.campaigns, { company, status: 'Cake sent', cakeSentDate: '' }];
+        : [...prev.campaigns, { company, status: 'Cake sent', cakeSentDate: '', notes: '' }];
       return { ...prev, campaigns };
     });
-    await updateCampaign(company, 'Cake sent');
+    await updateCampaign(company, { status: 'Cake sent' });
   }
 
   async function handleRemoveCompany(company: string) {
@@ -487,7 +488,15 @@ export default function OutreachApp() {
       if (!prev) return prev;
       return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status: 'Closed' } : c)) };
     });
-    await updateCampaign(company, 'Closed');
+    await updateCampaign(company, { status: 'Closed' });
+  }
+
+  async function handleSaveCompanyNotes(company: string, notes: string) {
+    setData(prev => {
+      if (!prev) return prev;
+      return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, notes } : c)) };
+    });
+    await updateCampaign(company, { notes });
   }
 
   async function handleSaveComment(c: Contact) {
@@ -1198,6 +1207,15 @@ export default function OutreachApp() {
             ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
             : todayGroups;
           const watchedCompanies = (data?.campaigns ?? []).filter(c => !isCampaignClosed(c.status));
+          const watchedKeys = new Set(watchedCompanies.map(c => normAbbr(c.company)));
+          const allCompanyNames = Array.from(
+            new Set((data?.allContacts ?? []).map(c => c.company).filter(Boolean))
+          ).sort();
+          const companySuggestions = newCompanyName.trim()
+            ? allCompanyNames
+                .filter(name => normAbbr(name).includes(normAbbr(newCompanyName)) && !watchedKeys.has(normAbbr(name)))
+                .slice(0, 8)
+            : [];
 
           return (
             <div className={styles.todayPage}>
@@ -1218,23 +1236,61 @@ export default function OutreachApp() {
 
               {manageOpen && (
                 <div className={styles.managePanel}>
-                  <div className={styles.manageAddRow}>
-                    <input
-                      className={styles.manageInput}
-                      placeholder="Company name"
-                      value={newCompanyName}
-                      onChange={e => setNewCompanyName(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddCompany()}
-                    />
-                    <button className={styles.manageAddBtn} onClick={handleAddCompany}>Add</button>
+                  <div className={styles.manageAddWrap}>
+                    <div className={styles.manageAddRow}>
+                      <input
+                        className={styles.manageInput}
+                        placeholder="Company name"
+                        value={newCompanyName}
+                        onChange={e => setNewCompanyName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAddCompany()}
+                      />
+                      <button className={styles.manageAddBtn} onClick={() => handleAddCompany()}>Add</button>
+                    </div>
+                    {companySuggestions.length > 0 && (
+                      <div className={styles.manageSuggestions}>
+                        {companySuggestions.map(name => (
+                          <button key={name} className={styles.manageSuggestion} onClick={() => handleAddCompany(name)}>
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className={styles.manageChips}>
-                    {watchedCompanies.map(c => (
-                      <span key={c.company} className={styles.manageChip}>
-                        {c.company}
-                        <button onClick={() => handleRemoveCompany(c.company)} aria-label={`Stop watching ${c.company}`}>&times;</button>
-                      </span>
-                    ))}
+
+                  <div className={styles.manageList}>
+                    {watchedCompanies.map(c => {
+                      const notesValue = companyNotesDrafts[c.company] ?? c.notes;
+                      const dirty = notesValue !== c.notes;
+                      return (
+                        <div key={c.company} className={styles.manageRow}>
+                          <div className={styles.manageRowTop}>
+                            <span className={styles.manageRowName}>{c.company}</span>
+                            <button
+                              className={styles.manageRemoveBtn}
+                              onClick={() => handleRemoveCompany(c.company)}
+                              aria-label={`Stop watching ${c.company}`}
+                            >
+                              &times;
+                            </button>
+                          </div>
+                          <div className={styles.manageNotesRow}>
+                            <input
+                              className={styles.manageNotesInput}
+                              placeholder="Notes on this company…"
+                              value={notesValue}
+                              onChange={e => setCompanyNotesDrafts(prev => ({ ...prev, [c.company]: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && handleSaveCompanyNotes(c.company, notesValue)}
+                            />
+                            {dirty && (
+                              <button className={styles.manageNotesSaveBtn} onClick={() => handleSaveCompanyNotes(c.company, notesValue)}>
+                                Save
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                     {watchedCompanies.length === 0 && <span className={styles.manageEmpty}>No companies watched yet</span>}
                   </div>
                 </div>

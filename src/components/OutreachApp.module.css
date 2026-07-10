@@ -1771,27 +1771,77 @@
   font-weight: 500;
 }
 
-.manageChips {
+.manageAddWrap {
+  position: relative;
+}
+
+.manageSuggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 46px;
+  z-index: 5;
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.manageSuggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 11px;
+  font-size: 12px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.manageSuggestion:last-child {
+  border-bottom: none;
+}
+
+.manageSuggestion:hover {
+  background: var(--surface);
+}
+
+.manageList {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manageRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.manageRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.manageRowTop {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.manageChip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  padding: 5px 6px 5px 11px;
-  border-radius: 20px;
-  background: var(--surface2);
-  border: 1px solid var(--border-light);
+.manageRowName {
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text);
 }
 
-.manageChip button {
-  width: 16px;
-  height: 16px;
+.manageRemoveBtn {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1801,9 +1851,35 @@
   line-height: 1;
 }
 
-.manageChip button:hover {
+.manageRemoveBtn:hover {
   background: var(--red-bg);
   color: var(--red);
+}
+
+.manageNotesRow {
+  display: flex;
+  gap: 6px;
+}
+
+.manageNotesInput {
+  flex: 1;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.manageNotesSaveBtn {
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  border: 1px solid rgba(232, 213, 176, 0.25);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 .manageEmpty {
