@@ -44,7 +44,7 @@ export async function GET() {
     const followUps = getFollowUpQueue(contacts, INTERVAL);
     const newContacts = getNewContactsQueue(contacts);
     const snoozes = getActiveSnoozes(activity);
-    const today = getTodayQueue(contacts, campaigns, INTERVAL, GONE_COLD_DAYS, snoozes);
+    const today = getTodayQueue(contacts, campaigns, GONE_COLD_DAYS, snoozes);
 
     return NextResponse.json({
       followUps,

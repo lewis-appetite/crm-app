@@ -35,10 +35,9 @@ type Tab = 'followup' | 'new' | 'today' | 'messages' | 'cake' | 'connections' | 
 const TIER_LABELS: Record<Tier, string> = {
   1: 'Cake sent',
   2: 'Interested, gone cold',
-  3: 'Chasing silence',
 };
-const TIER_ICONS: Record<Tier, string> = { 1: '\u{1F382}', 2: '\u{1F525}', 3: '\u{1F4E8}' };
-const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm', 3: 'tierCold' };
+const TIER_ICONS: Record<Tier, string> = { 1: '\u{1F382}', 2: '\u{1F525}' };
+const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm' };
 type NewSort = 'recent' | 'oldest' | 'az';
 type MessagesView = 'cards' | 'table';
 
@@ -1110,7 +1109,7 @@ export default function OutreachApp() {
 
         /* ── TODAY TAB ── */
         : tab === 'today' ? (() => {
-          const tierCounts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0 };
+          const tierCounts: Record<Tier, number> = { 1: 0, 2: 0 };
           todayGroups.forEach(g => g.contacts.forEach(c => { tierCounts[c.tier]++; }));
           const visibleGroups = tierFilter
             ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
@@ -1131,7 +1130,7 @@ export default function OutreachApp() {
           return (
             <div className={styles.todayPage}>
               <div className={styles.tierChipsRow}>
-                {([1, 2, 3] as Tier[]).map(t => (
+                {([1, 2] as Tier[]).map(t => (
                   <button
                     key={t}
                     className={`${styles.tierChip} ${styles[TIER_STYLE[t]]} ${tierFilter === t ? styles.tierChipActive : ''}`}

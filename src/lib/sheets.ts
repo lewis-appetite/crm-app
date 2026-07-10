@@ -241,7 +241,12 @@ export function normalizeCompany(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-const CLOSED_CAMPAIGN_STATUSES = ['closed', 'won', 'lost', 'dead'];
+const CLOSED_CAMPAIGN_KEYWORDS = ['closed', 'won', 'lost', 'dead'];
+
+function isCampaignClosed(status: string): boolean {
+  const s = status.toLowerCase();
+  return CLOSED_CAMPAIGN_KEYWORDS.some(k => s.includes(k));
+}
 
 // No "Next Follow-up Date" column exists, so snoozing a Today-view contact
 // is recorded as an Activity log entry instead — the most recent 'snooze'
@@ -256,7 +261,10 @@ export function getActiveSnoozes(activity: ActivityEvent[]): Record<number, Date
   return result;
 }
 
-export type Tier = 1 | 2 | 3;
+// Tier 3 ("chasing silence" — regular overdue follow-ups) was dropped from
+// this queue: it's high-volume and already lives in the Follow-ups tab.
+// Today is deliberately small — only the two tiers worth daily attention.
+export type Tier = 1 | 2;
 
 export interface TierContact extends Contact {
   tier: Tier;
@@ -270,19 +278,19 @@ export interface CompanyGroup {
   maxOverdueDays: number | null;
 }
 
-// Unified "Today" queue: groups due follow-ups by company into three
-// priority tiers — cake-campaign accounts always surface first regardless
-// of normal follow-up cadence, since they represent live pipeline
+// Unified "Today" queue: groups the highest-priority follow-ups by company —
+// cake-campaign accounts (Tier 1) and contacts who replied positively then
+// went quiet (Tier 2). Companies marked closed in the Campaigns tab
+// (Closed-Lost, Closed Won, etc.) drop out of Tier 1 entirely.
 export function getTodayQueue(
   contacts: Contact[],
   campaigns: CampaignEntry[],
-  followUpIntervalDays: number,
   goneColdDays: number,
   snoozes: Record<number, Date> = {}
 ): CompanyGroup[] {
   const cakeCompanies = new Set(
     campaigns
-      .filter(c => !CLOSED_CAMPAIGN_STATUSES.includes(c.status.toLowerCase()))
+      .filter(c => !isCampaignClosed(c.status))
       .map(c => normalizeCompany(c.company))
   );
 
@@ -310,9 +318,6 @@ export function getTodayQueue(
     } else if (isPositive && days !== null && days >= goneColdDays) {
       tier = 2;
       overdueDays = days - goneColdDays;
-    } else if (!c.reply && c.message && days !== null && days >= followUpIntervalDays) {
-      tier = 3;
-      overdueDays = days - followUpIntervalDays;
     }
 
     if (tier === null) return;
