@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier,
-  suggestMessage, daysAgo, parseDate, todayDMY,
+  Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier, CampaignEntry,
+  suggestMessage, daysAgo, parseDate, todayDMY, isCampaignClosed,
   getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
   getStats, Stats,
 } from '@/lib/sheets';
@@ -26,6 +26,7 @@ interface SheetData {
   messages: Message[];
   allContacts: Contact[];
   activity: ActivityEvent[];
+  campaigns: CampaignEntry[];
   intervalDays: number;
   dailyNewGoal: number;
 }
@@ -44,8 +45,8 @@ type MessagesView = 'cards' | 'table';
 const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Not interested', 'Blocked', 'Gone cold'];
 
 interface UpdateBody {
-  rowIndex: number;
-  cells: { col: string; value: string }[];
+  rowIndex?: number;
+  cells?: { col: string; value: string }[];
   log?: {
     date: string;
     rowIndex: number;
@@ -55,6 +56,7 @@ interface UpdateBody {
     template: string;
     detail: string;
   };
+  campaign?: { company: string; status: string };
 }
 
 async function postUpdate(payload: UpdateBody): Promise<boolean> {
@@ -135,6 +137,9 @@ export default function OutreachApp() {
   const seededExpand = useRef(false);
   const [tierFilter, setTierFilter] = useState<Tier | null>(null);
   const [activeMenu, setActiveMenu] = useState<{ rowIndex: number; type: 'snooze' | 'replied' } | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
 
   // Message picker on contact card
   const [selectedMessage, setSelectedMessage] = useState('');
@@ -350,6 +355,12 @@ export default function OutreachApp() {
     if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
 
+  async function updateCampaign(company: string, status: string) {
+    const payload: UpdateBody = { campaign: { company, status } };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
+  }
+
   async function retryFailedWrites() {
     if (retrying || failedWrites.length === 0) return;
     setRetrying(true);
@@ -374,15 +385,50 @@ export default function OutreachApp() {
   }
 
   async function handleTodayDone(c: Contact) {
-    const isFollowUp = !!c.message;
-    const newCount = isFollowUp ? (parseInt(c.followUps) || 0) + 1 : null;
     const cells: { col: string; value: string }[] = [{ col: 'N', value: todayDMY() }];
-    if (newCount !== null) cells.push({ col: 'K', value: String(newCount) });
+    let actionType: string;
+    let newFollowUpCount: number | null = null;
+    let messageField: 'message' | 'followUpMessage1' | 'followUpMessage2' | null = null;
+
+    if (!c.message) {
+      cells.push({ col: 'I', value: 'One-off' });
+      messageField = 'message';
+      actionType = 'new';
+    } else {
+      newFollowUpCount = (parseInt(c.followUps) || 0) + 1;
+      cells.push({ col: 'K', value: String(newFollowUpCount) });
+      if (!c.followUpMessage1) {
+        cells.push({ col: 'L', value: 'One-off' });
+        messageField = 'followUpMessage1';
+        actionType = 'followup1';
+      } else if (!c.followUpMessage2) {
+        cells.push({ col: 'M', value: 'One-off' });
+        messageField = 'followUpMessage2';
+        actionType = 'followup2';
+      } else {
+        actionType = 'followup3';
+      }
+    }
 
     await updateSheet(c.rowIndex, cells, {
-      action: isFollowUp ? `followup${Math.min(newCount ?? 1, 3)}` : 'new',
+      action: actionType,
+      template: 'One-off',
       name: c.fullName,
       company: c.company,
+    });
+
+    setData(prev => {
+      if (!prev) return prev;
+      const upd = (x: Contact) =>
+        x.rowIndex !== c.rowIndex
+          ? x
+          : {
+              ...x,
+              lastContacted: todayDMY(),
+              ...(newFollowUpCount !== null ? { followUps: String(newFollowUpCount) } : {}),
+              ...(messageField ? { [messageField]: 'One-off' } : {}),
+            };
+      return { ...prev, allContacts: prev.allContacts.map(upd) };
     });
     setDismissed(prev => new Set(prev).add(c.rowIndex));
   }
@@ -419,6 +465,43 @@ export default function OutreachApp() {
     if (value === 'Interested') {
       setCelebration({ title: '\u{1F389} Interested!', detail: `${c.fullName} at ${c.company} is interested` });
     }
+  }
+
+  async function handleAddCompany() {
+    const company = newCompanyName.trim();
+    if (!company) return;
+    setNewCompanyName('');
+    setData(prev => {
+      if (!prev) return prev;
+      const existing = prev.campaigns.find(c => normAbbr(c.company) === normAbbr(company));
+      const campaigns = existing
+        ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Cake sent' } : c))
+        : [...prev.campaigns, { company, status: 'Cake sent', cakeSentDate: '' }];
+      return { ...prev, campaigns };
+    });
+    await updateCampaign(company, 'Cake sent');
+  }
+
+  async function handleRemoveCompany(company: string) {
+    setData(prev => {
+      if (!prev) return prev;
+      return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status: 'Closed' } : c)) };
+    });
+    await updateCampaign(company, 'Closed');
+  }
+
+  async function handleSaveComment(c: Contact) {
+    const value = commentDrafts[c.rowIndex] ?? c.comment;
+    await updateSheet(c.rowIndex, [{ col: 'O', value }]);
+    setData(prev => {
+      if (!prev) return prev;
+      const upd = <T extends Contact>(x: T) => (x.rowIndex !== c.rowIndex ? x : { ...x, comment: value });
+      return {
+        ...prev,
+        allContacts: prev.allContacts.map(upd),
+        today: prev.today.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
+      };
+    });
   }
 
   async function handleAction(action: 'contacted' | 'dead') {
@@ -1114,18 +1197,7 @@ export default function OutreachApp() {
           const visibleGroups = tierFilter
             ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
             : todayGroups;
-
-          if (todayGroups.length === 0) {
-            return (
-              <div className={styles.emptyState}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                <p>All caught up</p>
-              </div>
-            );
-          }
+          const watchedCompanies = (data?.campaigns ?? []).filter(c => !isCampaignClosed(c.status));
 
           return (
             <div className={styles.todayPage}>
@@ -1139,9 +1211,44 @@ export default function OutreachApp() {
                     {TIER_ICONS[t]} {tierCounts[t]}
                   </button>
                 ))}
+                <button className={styles.manageBtn} onClick={() => setManageOpen(o => !o)}>
+                  {manageOpen ? 'Close' : 'Manage companies'}
+                </button>
               </div>
 
-              {visibleGroups.map(g => {
+              {manageOpen && (
+                <div className={styles.managePanel}>
+                  <div className={styles.manageAddRow}>
+                    <input
+                      className={styles.manageInput}
+                      placeholder="Company name"
+                      value={newCompanyName}
+                      onChange={e => setNewCompanyName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddCompany()}
+                    />
+                    <button className={styles.manageAddBtn} onClick={handleAddCompany}>Add</button>
+                  </div>
+                  <div className={styles.manageChips}>
+                    {watchedCompanies.map(c => (
+                      <span key={c.company} className={styles.manageChip}>
+                        {c.company}
+                        <button onClick={() => handleRemoveCompany(c.company)} aria-label={`Stop watching ${c.company}`}>&times;</button>
+                      </span>
+                    ))}
+                    {watchedCompanies.length === 0 && <span className={styles.manageEmpty}>No companies watched yet</span>}
+                  </div>
+                </div>
+              )}
+
+              {todayGroups.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                  </svg>
+                  <p>All caught up</p>
+                </div>
+              ) : visibleGroups.map(g => {
                 const isExpanded = expandedCompanies.has(g.company);
                 return (
                   <div key={g.company} className={styles.companyCard}>
@@ -1222,6 +1329,19 @@ export default function OutreachApp() {
                                   ) : null}
                                 </div>
                               )}
+
+                              <div className={styles.todayCommentRow}>
+                                <input
+                                  className={styles.todayCommentInput}
+                                  placeholder="Add a comment…"
+                                  value={commentDrafts[c.rowIndex] ?? c.comment}
+                                  onChange={e => setCommentDrafts(prev => ({ ...prev, [c.rowIndex]: e.target.value }))}
+                                  onKeyDown={e => e.key === 'Enter' && handleSaveComment(c)}
+                                />
+                                {(commentDrafts[c.rowIndex] ?? c.comment) !== c.comment && (
+                                  <button className={styles.todayCommentSaveBtn} onClick={() => handleSaveComment(c)}>Save</button>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

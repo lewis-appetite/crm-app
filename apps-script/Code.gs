@@ -32,6 +32,25 @@ function doPost(e) {
     }
   }
 
+  if (body.campaign) {
+    var campSheet = ss.getSheetByName('Campaigns');
+    if (campSheet) {
+      var rows = campSheet.getDataRange().getValues();
+      var target = String(body.campaign.company).trim().toLowerCase();
+      var found = false;
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]).trim().toLowerCase() === target) {
+          campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        campSheet.appendRow([body.campaign.company, body.campaign.status, '']);
+      }
+    }
+  }
+
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);

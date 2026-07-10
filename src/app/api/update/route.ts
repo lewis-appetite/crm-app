@@ -11,22 +11,23 @@ interface LogEntry {
 }
 
 interface UpdatePayload {
-  rowIndex: number;
-  cells: { col: string; value: string }[];
+  rowIndex?: number;
+  cells?: { col: string; value: string }[];
   log?: LogEntry;
+  campaign?: { company: string; status: string };
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { rowIndex, cells, log }: UpdatePayload = await req.json();
-    if ((!cells || cells.length === 0) && !log) {
+    const { rowIndex, cells, log, campaign }: UpdatePayload = await req.json();
+    if ((!cells || cells.length === 0) && !log && !campaign) {
       return NextResponse.json({ ok: true });
     }
     const scriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL!;
     const res = await fetch(scriptUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rowIndex, cells: cells ?? [], log }),
+      body: JSON.stringify({ rowIndex, cells: cells ?? [], log, campaign }),
       redirect: 'follow',
     });
     // Apps Script returns 200 with an HTML error page when the script throws,

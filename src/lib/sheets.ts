@@ -243,7 +243,7 @@ export function normalizeCompany(s: string): string {
 
 const CLOSED_CAMPAIGN_KEYWORDS = ['closed', 'won', 'lost', 'dead'];
 
-function isCampaignClosed(status: string): boolean {
+export function isCampaignClosed(status: string): boolean {
   const s = status.toLowerCase();
   return CLOSED_CAMPAIGN_KEYWORDS.some(k => s.includes(k));
 }
