@@ -382,7 +382,7 @@ export default function OutreachApp() {
 
   function handleEmailContact(c: Contact) {
     if (!c.email) return;
-    window.location.href = `mailto:${c.email}`;
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.email)}`, '_blank');
   }
 
   function handleCallContact(c: Contact) {
