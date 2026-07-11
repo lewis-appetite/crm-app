@@ -437,22 +437,26 @@ function personalise(template: string, contact: Contact): string {
 
 export interface MessageStats {
   abbreviation: string;
-  sent: number;
+  sent: number; // true total times this template was used, ever
+  eligible: number; // subset old enough (or already replied) to fairly count toward the rate
   replied: number;
-  replyRate: number | null;
+  replyRate: number | null; // replied / eligible
 }
 
 export function getMessageStats(contacts: Contact[], messages: Message[]): MessageStats[] {
-  const stats: Record<string, { sent: number; replied: number }> = {};
+  const stats: Record<string, { sent: number; eligible: number; replied: number }> = {};
 
   contacts.forEach(c => {
-    if (!countsForReplyRate(c)) return;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
+    const eligible = countsForReplyRate(c);
     [c.message, c.followUpMessage1, c.followUpMessage2].filter(Boolean).forEach(abbr => {
       const key = normAbbr(abbr);
-      if (!stats[key]) stats[key] = { sent: 0, replied: 0 };
+      if (!stats[key]) stats[key] = { sent: 0, eligible: 0, replied: 0 };
       stats[key].sent++;
-      if (isPositive) stats[key].replied++;
+      if (eligible) {
+        stats[key].eligible++;
+        if (isPositive) stats[key].replied++;
+      }
     });
   });
 
@@ -461,8 +465,9 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
     return {
       abbreviation: m.abbreviation,
       sent: s?.sent ?? 0,
+      eligible: s?.eligible ?? 0,
       replied: s?.replied ?? 0,
-      replyRate: s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
+      replyRate: s && s.eligible >= 2 ? Math.round((s.replied / s.eligible) * 100) : null,
     };
   });
 }

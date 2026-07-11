@@ -708,8 +708,8 @@ export default function OutreachApp() {
       setCelebration({
         title: '🎉 Interested!',
         detail:
-          s && s.sent > 0
-            ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.sent) * 100)}% reply rate (${s.replied}/${s.sent})`
+          s && s.eligible > 0
+            ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.eligible) * 100)}% reply rate (${s.replied}/${s.eligible})`
             : `${prevContact.fullName} is interested`,
       });
     }
@@ -1153,13 +1153,11 @@ export default function OutreachApp() {
                         return (
                           <div key={msg.abbreviation} className={styles.msgTableRow}>
                             <span className={styles.msgTableRate}>
-                              {s?.replyRate !== null && s?.replyRate !== undefined
-                                ? `${s.replyRate}%`
-                                : s?.sent ? `0%` : '—'}
+                              {s?.replyRate !== null && s?.replyRate !== undefined ? `${s.replyRate}%` : '—'}
                             </span>
                             <span className={styles.msgTableAbbr}>{msg.abbreviation}</span>
                             {s?.sent > 0 && (
-                              <span className={styles.msgTableSent}>{s.replied}/{s.sent}</span>
+                              <span className={styles.msgTableSent}>{s.replied}/{s.eligible} of {s.sent} sent</span>
                             )}
                           </div>
                         );
@@ -1187,6 +1185,11 @@ export default function OutreachApp() {
                       {s && s.sent > 0 && (
                         <div className={styles.messageSentRow}>
                           {s.replied} positive / {s.sent} sent
+                          {s.eligible < s.sent && (
+                            <span className={styles.messageSentNote}>
+                              {' '}· rate based on {s.eligible} sent 7+ days ago
+                            </span>
+                          )}
                         </div>
                       )}
                       <p className={styles.messageItemBody}>{msg.fullMessage}</p>
