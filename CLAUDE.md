@@ -33,6 +33,11 @@ Three Google Sheets tabs:
 | 12 | M | Follow Up Message 2 (abbreviation of second follow-up template used) |
 | 13 | N | Last Contacted (date, DD/MM/YYYY) |
 | 14 | O | Comment |
+| 15 | P | Email |
+| 16 | Q | Phone |
+| 17 | R | Call booked (date, DD/MM/YYYY — not yet read by the app) |
+
+Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must be APPENDED (S, T, …), never inserted mid-sheet. All date columns display DD/MM/YYYY; the app parses displayed values, so never change that display format. Cols I/L/M have sheet-side dropdown validation fed from Messages!C (warning mode, not reject — reject would break Apps Script writes).
 
 ### Messages tab (one row per template)
 | Col | Field |
