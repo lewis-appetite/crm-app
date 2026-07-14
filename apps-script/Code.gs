@@ -128,3 +128,84 @@ function setupDataHygiene() {
 function normAbbr_(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
+
+// One-time repair — run manually from the editor (Run > repairEmailPhoneColumns).
+// Cols P/Q sat outside the sorted table range, so a sort scrambled which contact
+// each email belonged to. This clears P and Q entirely and rewrites every known
+// email against the correct contact, matched by name + company (sort-proof).
+function repairEmailPhoneColumns() {
+  var EMAILS = [
+    { name: "Rory Sadler", company: "Trumpet", email: "rory@sendtrumpet.com" },
+    { name: "Lorna Wright", company: "Trumpet", email: "lorna@sendtrumpet.com" },
+    { name: "Luke Matthews", company: "Trumpet", email: "luke@sendtrumpet.com" },
+    { name: "Javier Mois\u00e9s Quir\u00f3s", company: "Ledgy", email: "javier.moises.quiros@ledgy.com" },
+    { name: "Meg Westrope", company: "Ledgy", email: "meg.westrope@ledgy.com" },
+    { name: "Gregory Hartley", company: "Ledgy", email: "gregory.hartley@ledgy.com" },
+    { name: "Tobie Morgan Hitchcock", company: "SurrealDB", email: "tobie@surrealdb.com" },
+    { name: "Ignacio Paz", company: "SurrealDB", email: "ignacio@surrealdb.com" },
+    { name: "Ned Rudkins-Stow", company: "SurrealDB", email: "ned.rudkins-stow@surrealdb.com" },
+    { name: "Mark Gyles", company: "SurrealDB", email: "mark.gyles@surrealdb.com" },
+    { name: "Ross McDermott", company: "Gradient Labs", email: "ross@gradient-labs.ai" },
+    { name: "Dimitri Masin", company: "Gradient Labs", email: "dimitri@gradient-labs.ai" },
+    { name: "Max Schemuth", company: "Gradient Labs", email: "max@gradient-labs.ai" },
+    { name: "Zan Faruqui", company: "Gradient Labs", email: "zan@gradient-labs.ai" },
+    { name: "Miguel Rebelo", company: "Omnea", email: "miguel.r@omnea.co" },
+    { name: "Nick Barker", company: "Omnea", email: "nick.b@omnea.co" },
+    { name: "Patrick Penzo", company: "Omnea", email: "patrick.p@omnea.co" },
+    { name: "Jasmin Heimann", company: "Omnea", email: "jasmin.heimann@omnea.co" },
+    { name: "Dan Yeates", company: "Metaview", email: "dan@metaview.ai" },
+    { name: "Stephanie Tsimis", company: "Metaview", email: "stephanie@metaview.ai" },
+    { name: "Piyush Raj", company: "Metaview", email: "piyush@metaview.ai" },
+    { name: "Aswathy Reji", company: "Wordsmith AI", email: "aswathy@wordsmith.ai" },
+    { name: "Kane Greggain", company: "Wordsmith AI", email: "kane@wordsmith.ai" },
+    { name: "Euan Dobbie", company: "Wordsmith AI", email: "euan@wordsmith.ai" },
+    { name: "Veronika Targos", company: "Adfin", email: "veronika.targos@adfin.com" },
+    { name: "Karol Jozwik", company: "Adfin", email: "karol.jozwik@adfin.com" },
+    { name: "Georgia Feldmanis", company: "Adfin", email: "georgia.feldmanis@adfin.com" },
+    { name: "Carlos Rey", company: "Adfin", email: "carlos@adfin.com" },
+    { name: "Tash Laybourne", company: "Hook", email: "tasha@hook.co" },
+    { name: "Amaris Bourgeois", company: "Hook", email: "amaris@hook.co" },
+    { name: "Firaas Rashid", company: "Hook", email: "firaas@hook.co" },
+    { name: "Oliver Pickett", company: "Hook", email: "oliver@hook.co" },
+    { name: "Luke Morris", company: "Encord", email: "luke.morris@encord.com" },
+    { name: "Sara Schein", company: "Encord", email: "sara@encord.com" },
+    { name: "Otto Szoke", company: "Encord", email: "otto@encord.com" },
+    { name: "Annabel Benjamin", company: "Encord", email: "annabel@encord.com" },
+    { name: "Nicolaj Peters", company: "Encord", email: "nicolaj.peters@encord.com" },
+    { name: "Ronal Karia", company: "Trumpet", email: "ronal@sendtrumpet.com" },
+    { name: "Charlotte Platts", company: "Trumpet", email: "charlotte@sendtrumpet.com" },
+    { name: "Tamara Sammakia", company: "Adfin", email: "tamara.sammakia@adfin.com" },
+    { name: "Flora Faulk", company: "Adfin", email: "flora.faulk@adfin.com" },
+    { name: "Corey Haigney", company: "Adfin", email: "corey.haigney@adfin.com" },
+  ];
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var conn = ss.getSheetByName('Connections');
+  var lastRow = conn.getLastRow();
+
+  var rowByKey = {};
+  var names = conn.getRange(2, 1, lastRow - 1, 4).getValues(); // A:D
+  names.forEach(function (r, i) {
+    var key = normAbbr_(String(r[0]) + String(r[1])) + '|' + normAbbr_(String(r[3]));
+    if (!(key in rowByKey)) rowByKey[key] = i + 2;
+  });
+
+  // wipe both columns (this removes ALL current values - they are scrambled and unsalvageable in place)
+  conn.getRange(2, 16, lastRow - 1, 2).clearContent(); // P:Q
+
+  var placed = 0;
+  var missing = [];
+  EMAILS.forEach(function (e) {
+    var key = normAbbr_(e.name) + '|' + normAbbr_(e.company);
+    var row = rowByKey[key];
+    if (row) {
+      conn.getRange(row, 16).setValue(e.email); // P
+      placed++;
+    } else {
+      missing.push(e.name + ' @ ' + e.company);
+    }
+  });
+
+  Logger.log('Placed ' + placed + ' of ' + EMAILS.length + ' emails.');
+  if (missing.length) Logger.log('NO MATCHING ROW FOUND for: ' + missing.join('; '));
+}
