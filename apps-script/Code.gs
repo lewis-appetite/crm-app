@@ -132,3 +132,15 @@ function setupDataHygiene() {
 function normAbbr_(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
+
+// Run this ONCE manually from the editor (select from the function dropdown, click Run)
+// to grant the script Gmail access. Redeploying does NOT trigger this prompt on its own -
+// only a human running a Gmail-touching function in the editor does. Without it, GmailApp
+// calls from doPost fail with a generic "Error" page instead of creating drafts.
+// Creates a throwaway draft to yourself and immediately deletes it.
+function authorizeGmailScope() {
+  var email = Session.getActiveUser().getEmail();
+  var draft = GmailApp.createDraft(email, 'Apps Script authorization test', 'Safe to ignore - deleting now.');
+  draft.deleteDraft();
+  Logger.log('Gmail access granted and verified.');
+}
