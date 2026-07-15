@@ -135,9 +135,13 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     `- Don't invent facts, meetings, or interest that isn't in the context.`,
     `- Sign off exactly: "Best,\\nLewis"`,
     ``,
-    `Return ONLY valid JSON: {"subject": "...", "body": "..."} — body uses \\n for line breaks. Subject should be short and lowercase, referencing the cake or their office where natural.`,
+    `Subject should be short and lowercase, referencing the cake or their office where natural. Call the write_email tool with the finished subject and body — body should have real line breaks between paragraphs.`,
   ].join('\n');
 
+  // Forced tool use instead of "reply with JSON in text" - guarantees a real
+  // parsed object back from the API, so a stray unescaped character in the
+  // body can never silently produce a blank draft the way regex/JSON.parse
+  // extraction from free text did.
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -150,6 +154,21 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
       max_tokens: 600,
       system: systemPrompt,
       messages: [{ role: 'user', content: context }],
+      tools: [
+        {
+          name: 'write_email',
+          description: 'Save the drafted email',
+          input_schema: {
+            type: 'object',
+            properties: {
+              subject: { type: 'string', description: 'Short, lowercase email subject' },
+              body: { type: 'string', description: 'The full email body, with real line breaks between paragraphs' },
+            },
+            required: ['subject', 'body'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'write_email' },
     }),
   });
 
@@ -158,17 +177,12 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     return { ok: false, error: anthropicJson?.error?.message || `Anthropic API responded ${anthropicRes.status}` };
   }
 
-  const raw: string = anthropicJson.content?.[0]?.text ?? '';
-  let subject = `the cake at ${target.company}`;
-  let body = raw;
-  try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.subject) subject = parsed.subject;
-      if (parsed.body) body = parsed.body;
-    }
-  } catch { /* fall back to raw text as body */ }
+  const toolUse = anthropicJson.content?.find((b: { type: string }) => b.type === 'tool_use');
+  const subject: string = toolUse?.input?.subject?.trim() || '';
+  const body: string = toolUse?.input?.body?.trim() || '';
+  if (!subject || !body) {
+    return { ok: false, error: 'Model returned an incomplete draft (missing subject or body)' };
+  }
 
   await postToAppsScript({
     draft: { to: target.email, subject, body },
