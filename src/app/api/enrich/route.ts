@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'FULLENRICH_API_KEY is not configured' }, { status: 500 });
     }
 
-    const { rowIndex, firstName, lastName, company, linkedinUrl } = await req.json();
+    const { rowIndex, firstName, lastName, company, linkedinUrl, domain } = await req.json();
     if (!rowIndex || !firstName || !company) {
       return NextResponse.json({ error: 'rowIndex, firstName and company are required' }, { status: 400 });
     }
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
             last_name: lastName || '',
             company_name: company,
             ...(linkedinUrl ? { linkedin_url: linkedinUrl } : {}),
+            ...(domain ? { domain } : {}),
             enrich_fields: ['contact.work_emails'],
             custom: { rowIndex: String(rowIndex) },
           },

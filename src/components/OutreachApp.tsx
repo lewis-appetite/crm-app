@@ -427,6 +427,14 @@ export default function OutreachApp() {
     if (emailBusy[c.rowIndex]) return;
     setEmailBusy(prev => ({ ...prev, [c.rowIndex]: 'enriching' }));
     try {
+      // A bare company name is a weak match signal (e.g. "Metaview" got mismatched
+      // to "Meta") - if a colleague at the same company already has a verified
+      // email on file, hand FullEnrich that domain too for a much stronger match.
+      const companyKey = normAbbr(c.company);
+      const colleagueDomain = (data?.allContacts ?? [])
+        .find(x => x.rowIndex !== c.rowIndex && normAbbr(x.company) === companyKey && x.email.includes('@'))
+        ?.email.split('@')[1];
+
       const startRes = await fetch('/api/enrich', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,6 +444,7 @@ export default function OutreachApp() {
           lastName: c.lastName,
           company: c.company,
           linkedinUrl: c.url,
+          domain: colleagueDomain,
         }),
       });
       const startJson = await startRes.json();
