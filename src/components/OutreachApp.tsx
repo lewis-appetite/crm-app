@@ -42,7 +42,7 @@ const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm' };
 type NewSort = 'recent' | 'oldest' | 'az';
 type MessagesView = 'cards' | 'table';
 
-const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Not interested', 'Blocked', 'Gone cold'];
+const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Wrong location', 'Wrong role', 'Not interested', 'Blocked', 'Gone cold'];
 
 interface UpdateBody {
   rowIndex?: number;
@@ -666,7 +666,7 @@ export default function OutreachApp() {
     });
   }
 
-  async function handleAction(action: 'contacted' | 'dead') {
+  async function handleAction(action: 'contacted' | 'dead', deadReason?: string) {
     if (!contact || actionLoading) return;
     setActionLoading(true);
 
@@ -722,10 +722,11 @@ export default function OutreachApp() {
       setSessionSent(s => s + 1);
       setCombo(x => x + 1);
     } else {
-      cells.push({ col: 'J', value: 'Dead lead' });
+      const reason = deadReason || 'Dead lead';
+      cells.push({ col: 'J', value: reason });
       await updateSheet(c.rowIndex, cells, {
         action: 'reply',
-        detail: 'Dead lead',
+        detail: reason,
         name: c.fullName,
         company: c.company,
       });
@@ -1870,14 +1871,35 @@ export default function OutreachApp() {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 Sent
               </button>
-              <button
-                className={`${styles.actionBtn} ${styles.deadBtn}`}
-                onClick={() => handleAction('dead')}
-                disabled={actionLoading}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                Dead lead
-              </button>
+              {tab === 'new' ? (
+                <>
+                  <button
+                    className={`${styles.actionBtn} ${styles.deadBtn}`}
+                    onClick={() => handleAction('dead', 'Wrong location')}
+                    disabled={actionLoading}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    Wrong location
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.deadBtn}`}
+                    onClick={() => handleAction('dead', 'Wrong role')}
+                    disabled={actionLoading}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    Wrong role
+                  </button>
+                </>
+              ) : (
+                <button
+                  className={`${styles.actionBtn} ${styles.deadBtn}`}
+                  onClick={() => handleAction('dead')}
+                  disabled={actionLoading}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Dead lead
+                </button>
+              )}
             </div>
           </>
         )}
