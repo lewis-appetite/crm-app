@@ -1961,6 +1961,8 @@
   padding: 11px 16px;
   border-radius: var(--radius);
   font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
   animation: toastIn 0.25s ease;
   cursor: pointer;
 }

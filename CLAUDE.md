@@ -81,7 +81,7 @@ Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists becaus
 - `GET /api/cake-images` — lists PNGs from the cake designs Drive folder, cached 300s
 - `POST /api/enrich` — starts a FullEnrich email lookup (registers a webhook + the contact's rowIndex as a `custom` field), returns `enrichmentId`. `GET /api/enrich?id=&rowIndex=` polls it; on `FINISHED` it writes the email to col P and triggers an auto-draft itself (fast path for when the client is still around)
 - `POST /api/enrich/webhook` — FullEnrich calls this on `contact_finished`, independent of client polling. Verifies `X-Signature-SHA1` (HMAC-SHA1 of the raw body, `FULLENRICH_API_KEY` as secret) before trusting the payload. Same write + auto-draft path as the GET poll — this is what makes enrichment survive the phone locking or the tab closing mid-lookup
-- `POST /api/draft-email` — `{ rowIndex }`: manual draft trigger (button tap), always drafts regardless of same-day history. Both this and the auto-draft path share `src/lib/draftEmail.ts`, which builds company context from the sheet (same-company contacts, templates, replies, campaign notes), asks OpenAI (`OPENAI_MODEL`, default `gpt-4o-mini`) for a short email, and creates a Gmail draft via the Apps Script (`GmailApp.createDraft`). Auto-drafts (`auto: true`) are guarded by a same-day dedupe check against the Activity log (action `emaildraft`, detail `auto`/`manual`) so a slow poll and a late webhook for the same enrichment can't both create a draft
+- `POST /api/draft-email` — `{ rowIndex }`: manual draft trigger (button tap), always drafts regardless of same-day history. Both this and the auto-draft path share `src/lib/draftEmail.ts`, which builds company context from the sheet (same-company contacts, templates, replies, campaign notes), asks Anthropic (`ANTHROPIC_MODEL`, default `claude-sonnet-5`) for a short email under a fixed rule set (no "following up" openers, max 3 short paragraphs, one closing question, only two pre-approved proof-point stats, sign-off "Best,\nLewis"), and creates a Gmail draft via the Apps Script (`GmailApp.createDraft`). Also computes deterministic pre-draft warnings (3+ touches with no reply, contacted within the last 3 working days, other contacts already engaged at the same company) surfaced in the toast on manual drafts — never blocks creation. Auto-drafts (`auto: true`) are guarded by a same-day dedupe check against the Activity log (action `emaildraft`, detail `auto`/`manual`) so a slow poll and a late webhook for the same enrichment can't both create a draft. "Ball in their court" detection (reading actual reply content) is planned for when Gmail thread search lands — needs real message text, not just CRM columns
 
 ## Environment Variables
 
@@ -93,8 +93,8 @@ FOLLOW_UP_INTERVAL_DAYS=14
 DAILY_NEW_GOAL=25
 GONE_COLD_DAYS=8
 FULLENRICH_API_KEY=
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o-mini
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-5
 ```
 
 Writes go through the Apps Script web app — the API key is read-only. The key must have both the Sheets API and Drive API enabled (Drive is used for cake images).

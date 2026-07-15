@@ -236,7 +236,8 @@ export default function OutreachApp() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
+    const lines = toast.msg.split('\n').length;
+    const t = setTimeout(() => setToast(null), 4000 + (lines - 1) * 2000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -411,7 +412,9 @@ export default function OutreachApp() {
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Draft failed');
-      setToast({ msg: `Draft for ${c.fullName} is in your Gmail drafts`, kind: 'ok' });
+      const warnings: string[] = json.warnings ?? [];
+      const msg = [`Draft for ${c.fullName} is in your Gmail drafts`, ...warnings.map(w => `⚠ ${w}`)].join('\n');
+      setToast({ msg, kind: 'ok' });
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : 'Draft failed', kind: 'err' });
     } finally {
