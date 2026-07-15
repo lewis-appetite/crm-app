@@ -28,8 +28,9 @@ function contactHistory(c: Contact, templateText: Record<string, string>): strin
 // rather than an explicit button tap — those get a same-day dedupe guard so a
 // slow poll and a late-arriving webhook for the same enrichment can't both fire.
 export async function draftEmailForContact(rowIndex: number, auto: boolean): Promise<DraftEmailResult> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicKey) return { ok: false, error: 'ANTHROPIC_API_KEY is not configured' };
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return { ok: false, error: 'OPENAI_API_KEY is not configured' };
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
   const [connectionRows, messageRows, campaignRows, activityRows] = await Promise.all([
     fetchSheetRange('Connections'),
@@ -76,47 +77,48 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     colleagues.length ? colleagues.map(c => contactHistory(c, templateText)).join('\n') : '- none yet',
   ].join('\n');
 
-  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+  const systemPrompt = [
+    `You write short outreach emails for Lewis, founder of Appetite — a company that sends branded celebration cakes to B2B prospects as a creative way to open sales conversations. Lewis runs "cake campaigns": a real cake with the prospect company's branding is delivered to their office, then Lewis follows up with the people there.`,
+    ``,
+    `Write a first email from Lewis to the target contact. Rules:`,
+    `- 50-110 words. Short sentences. Warm, direct, zero corporate filler.`,
+    `- Use the company context: if a cake was sent, reference it naturally. If colleagues were contacted or replied, weave that in ONLY if it helps ("I've been chatting with X on your team...") — never guilt-trip about ignored messages.`,
+    `- Don't invent facts, meetings, or interest that isn't in the context.`,
+    `- One clear ask: a quick call or a pointer to the right person.`,
+    `- Sign off "Lewis".`,
+    ``,
+    `Return ONLY valid JSON: {"subject": "...", "body": "..."} — body uses \\n for line breaks.`,
+  ].join('\n');
+
+  const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01',
+      Authorization: `Bearer ${openaiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-5',
+      model,
       max_tokens: 600,
-      system: [
-        `You write short outreach emails for Lewis, founder of Appetite — a company that sends branded celebration cakes to B2B prospects as a creative way to open sales conversations. Lewis runs "cake campaigns": a real cake with the prospect company's branding is delivered to their office, then Lewis follows up with the people there.`,
-        ``,
-        `Write a first email from Lewis to the target contact. Rules:`,
-        `- 50-110 words. Short sentences. Warm, direct, zero corporate filler.`,
-        `- Use the company context: if a cake was sent, reference it naturally. If colleagues were contacted or replied, weave that in ONLY if it helps ("I've been chatting with X on your team...") — never guilt-trip about ignored messages.`,
-        `- Don't invent facts, meetings, or interest that isn't in the context.`,
-        `- One clear ask: a quick call or a pointer to the right person.`,
-        `- Sign off "Lewis".`,
-        ``,
-        `Return ONLY valid JSON: {"subject": "...", "body": "..."} — body uses \\n for line breaks.`,
-      ].join('\n'),
-      messages: [{ role: 'user', content: context }],
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: context },
+      ],
     }),
   });
 
-  const anthropicJson = await anthropicRes.json();
-  if (!anthropicRes.ok) {
-    return { ok: false, error: anthropicJson?.error?.message || `Anthropic API responded ${anthropicRes.status}` };
+  const openaiJson = await openaiRes.json();
+  if (!openaiRes.ok) {
+    return { ok: false, error: openaiJson?.error?.message || `OpenAI API responded ${openaiRes.status}` };
   }
 
-  const raw: string = anthropicJson.content?.[0]?.text ?? '';
+  const raw: string = openaiJson.choices?.[0]?.message?.content ?? '';
   let subject = `Quick one — ${target.company}`;
   let body = raw;
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.subject) subject = parsed.subject;
-      if (parsed.body) body = parsed.body;
-    }
+    const parsed = JSON.parse(raw);
+    if (parsed.subject) subject = parsed.subject;
+    if (parsed.body) body = parsed.body;
   } catch { /* fall back to raw text as body */ }
 
   await postToAppsScript({
