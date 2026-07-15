@@ -79,6 +79,8 @@ Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists becaus
 - `GET /api/sheet` — fetches Connections + Messages + Activity tabs, returns `{ followUps, newContacts, messages, allContacts, activity, intervalDays, dailyNewGoal }`
 - `POST /api/update` — forwards `{ rowIndex, cells, log? }` to the Apps Script web app, which updates Connections cells and appends `log` to the Activity tab
 - `GET /api/cake-images` — lists PNGs from the cake designs Drive folder, cached 300s
+- `POST /api/enrich` — starts a FullEnrich email lookup, returns `enrichmentId`; `GET /api/enrich?id=` polls it (client writes the found email to col P via `/api/update`)
+- `POST /api/draft-email` — `{ rowIndex }`: builds company context from the sheet (same-company contacts, templates, replies, campaign notes), asks Claude (claude-sonnet-5) for a short email, creates a Gmail draft via the Apps Script (`GmailApp.createDraft`)
 
 ## Environment Variables
 
@@ -88,6 +90,9 @@ GOOGLE_SHEETS_API_KEY=
 GOOGLE_APPS_SCRIPT_URL=
 FOLLOW_UP_INTERVAL_DAYS=14
 DAILY_NEW_GOAL=25
+GONE_COLD_DAYS=8
+FULLENRICH_API_KEY=
+ANTHROPIC_API_KEY=
 ```
 
 Writes go through the Apps Script web app — the API key is read-only. The key must have both the Sheets API and Drive API enabled (Drive is used for cake images).

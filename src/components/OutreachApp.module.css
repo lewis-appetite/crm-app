@@ -1920,3 +1920,64 @@
   font-weight: 500;
   flex-shrink: 0;
 }
+
+/* ── Email actions (AI draft + FullEnrich) ── */
+
+.emailReadyBtn {
+  background: var(--accent-dim);
+  border-color: rgba(232, 213, 176, 0.3);
+  color: var(--accent);
+}
+
+.miniSpinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--accent);
+  animation: miniSpin 0.7s linear infinite;
+}
+
+@keyframes miniSpin {
+  to { transform: rotate(360deg); }
+}
+
+.emailNudge {
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  border: 1px solid rgba(232, 213, 176, 0.25);
+  color: var(--accent);
+}
+
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  max-width: min(92vw, 420px);
+  padding: 11px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  animation: toastIn 0.25s ease;
+  cursor: pointer;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.toastOk {
+  background: var(--green-bg);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: var(--green);
+}
+
+.toastErr {
+  background: var(--red-bg);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: var(--red);
+}

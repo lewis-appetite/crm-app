@@ -52,6 +52,10 @@ function doPost(e) {
     }
   }
 
+  if (body.draft && body.draft.to) {
+    GmailApp.createDraft(body.draft.to, body.draft.subject || '', body.draft.body || '');
+  }
+
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);

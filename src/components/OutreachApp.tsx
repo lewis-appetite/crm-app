@@ -141,6 +141,8 @@ export default function OutreachApp() {
   const [newCompanyName, setNewCompanyName] = useState('');
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
   const [companyNotesDrafts, setCompanyNotesDrafts] = useState<Record<string, string>>({});
+  const [emailBusy, setEmailBusy] = useState<Record<number, 'enriching' | 'drafting'>>({});
+  const [toast, setToast] = useState<{ msg: string; kind: 'ok' | 'err' } | null>(null);
 
   // Message picker on contact card
   const [selectedMessage, setSelectedMessage] = useState('');
@@ -231,6 +233,12 @@ export default function OutreachApp() {
     const t = setTimeout(() => setCelebration(null), 4000);
     return () => clearTimeout(t);
   }, [celebration]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     if (seededExpand.current || !data?.today || data.today.length === 0) return;
@@ -380,9 +388,89 @@ export default function OutreachApp() {
     window.open(c.url, '_blank');
   }
 
-  function handleEmailContact(c: Contact) {
-    if (!c.email) return;
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.email)}`, '_blank');
+  function setContactEmail(rowIndex: number, email: string) {
+    setData(prev => {
+      if (!prev) return prev;
+      const upd = <T extends Contact>(x: T): T => (x.rowIndex !== rowIndex ? x : { ...x, email });
+      return {
+        ...prev,
+        allContacts: prev.allContacts.map(upd),
+        today: prev.today.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
+      };
+    });
+  }
+
+  async function handleDraftEmail(c: Contact) {
+    if (emailBusy[c.rowIndex]) return;
+    setEmailBusy(prev => ({ ...prev, [c.rowIndex]: 'drafting' }));
+    try {
+      const res = await fetch('/api/draft-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rowIndex: c.rowIndex }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Draft failed');
+      setToast({ msg: `Draft for ${c.fullName} is in your Gmail drafts`, kind: 'ok' });
+    } catch (e: unknown) {
+      setToast({ msg: e instanceof Error ? e.message : 'Draft failed', kind: 'err' });
+    } finally {
+      setEmailBusy(prev => {
+        const next = { ...prev };
+        delete next[c.rowIndex];
+        return next;
+      });
+    }
+  }
+
+  async function handleFindEmail(c: Contact) {
+    if (emailBusy[c.rowIndex]) return;
+    setEmailBusy(prev => ({ ...prev, [c.rowIndex]: 'enriching' }));
+    try {
+      const startRes = await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: c.firstName,
+          lastName: c.lastName,
+          company: c.company,
+          linkedinUrl: c.url,
+        }),
+      });
+      const startJson = await startRes.json();
+      if (!startRes.ok || startJson.error) throw new Error(startJson.error || 'Enrichment failed to start');
+
+      let email: string | null = null;
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const pollRes = await fetch(`/api/enrich?id=${encodeURIComponent(startJson.enrichmentId)}`);
+        const pollJson = await pollRes.json();
+        if (pollJson.error) throw new Error(pollJson.error);
+        if (pollJson.status === 'FINISHED') {
+          email = pollJson.email;
+          break;
+        }
+        if (['CANCELED', 'CREDITS_INSUFFICIENT', 'RATE_LIMIT'].includes(pollJson.status)) {
+          throw new Error(`Enrichment ${pollJson.status.toLowerCase().replace(/_/g, ' ')}`);
+        }
+      }
+
+      if (!email) {
+        setToast({ msg: `No email found for ${c.fullName}`, kind: 'err' });
+        return;
+      }
+      await updateSheet(c.rowIndex, [{ col: 'P', value: email }]);
+      setContactEmail(c.rowIndex, email);
+      setToast({ msg: `Found ${email}`, kind: 'ok' });
+    } catch (e: unknown) {
+      setToast({ msg: e instanceof Error ? e.message : 'Enrichment failed', kind: 'err' });
+    } finally {
+      setEmailBusy(prev => {
+        const next = { ...prev };
+        delete next[c.rowIndex];
+        return next;
+      });
+    }
   }
 
   function handleCallContact(c: Contact) {
@@ -1375,6 +1463,12 @@ export default function OutreachApp() {
                                 )}
                               </div>
 
+                              {(parseInt(c.followUps) || 0) >= 2 && !c.reply && (
+                                <div className={styles.emailNudge}>
+                                  {'\u{1F4E7}'} {parseInt(c.followUps)} follow-ups, no reply — time to try email
+                                </div>
+                              )}
+
                               {menu === 'snooze' ? (
                                 <div className={styles.todayMenuRow}>
                                   <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 1)}>1 day</button>
@@ -1401,9 +1495,33 @@ export default function OutreachApp() {
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
                                     </button>
                                   )}
-                                  {c.email && (
-                                    <button className={styles.todayChannelBtn} onClick={() => handleEmailContact(c)} aria-label="Email">
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                                  {c.email ? (
+                                    <button
+                                      className={`${styles.todayChannelBtn} ${styles.emailReadyBtn}`}
+                                      onClick={() => handleDraftEmail(c)}
+                                      disabled={!!emailBusy[c.rowIndex]}
+                                      aria-label="Draft email with AI"
+                                      title="AI-draft an email into your Gmail drafts"
+                                    >
+                                      {emailBusy[c.rowIndex] === 'drafting' ? (
+                                        <span className={styles.miniSpinner} />
+                                      ) : (
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className={styles.todayChannelBtn}
+                                      onClick={() => handleFindEmail(c)}
+                                      disabled={!!emailBusy[c.rowIndex]}
+                                      aria-label="Find email with FullEnrich"
+                                      title="Find this contact's email (uses FullEnrich credits)"
+                                    >
+                                      {emailBusy[c.rowIndex] === 'enriching' ? (
+                                        <span className={styles.miniSpinner} />
+                                      ) : (
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="14" height="12" rx="2"/><path d="m16 7-7 4-7-4"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="m21 20 2 2"/></svg>
+                                      )}
                                     </button>
                                   )}
                                   {c.phone && (
@@ -1714,6 +1832,12 @@ export default function OutreachApp() {
             <div className={styles.celebrationTitle}>{celebration.title}</div>
             <div className={styles.celebrationDetail}>{celebration.detail}</div>
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`${styles.toast} ${toast.kind === 'err' ? styles.toastErr : styles.toastOk}`} onClick={() => setToast(null)}>
+          {toast.msg}
         </div>
       )}
     </div>
