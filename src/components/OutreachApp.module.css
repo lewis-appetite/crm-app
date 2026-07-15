@@ -1846,6 +1846,24 @@
   color: var(--text);
 }
 
+.manageStageSelect {
+  margin-left: auto;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.manageCakeDate {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .manageRemoveBtn {
   margin-left: auto;
   width: 18px;

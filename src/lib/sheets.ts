@@ -19,6 +19,7 @@ export interface Contact {
   comment: string;
   email: string;
   phone: string;
+  callBooked: string;
 }
 
 export interface Message {
@@ -55,6 +56,7 @@ const COL = {
   COMMENT: 14,
   EMAIL: 15,
   PHONE: 16,
+  CALL_BOOKED: 17,
 };
 
 // Column letters for Sheets API updates (1-based column letters)
@@ -85,6 +87,7 @@ export function parseConnections(rows: string[][]): Contact[] {
     comment: (row[COL.COMMENT] || '').trim(),
     email: cleanContactField(row[COL.EMAIL]),
     phone: cleanContactField(row[COL.PHONE]),
+    callBooked: (row[COL.CALL_BOOKED] || '').trim(),
   }));
 }
 
@@ -209,6 +212,21 @@ export function daysAgo(dateStr: string): number | null {
   return Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+export function businessDaysAgo(dateStr: string): number | null {
+  const days = daysAgo(dateStr);
+  if (days === null) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let count = 0;
+  const cursor = new Date(today);
+  for (let i = 0; i < days; i++) {
+    cursor.setDate(cursor.getDate() - 1);
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Contact[] {
   return contacts
     .filter(c => {
@@ -245,11 +263,25 @@ export function normalizeCompany(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Campaign lifecycle — mirrors the Appetite platform's stages.
+// Legacy free-text values still work: "Cake sent" maps to active,
+// "Closed-lost" matches the closed keywords.
+export const CAMPAIGN_STAGES = ['Planned', 'Delivered', 'Reply', 'Meeting', 'Pipeline', 'Closed Won', 'Closed Lost'] as const;
+
 const CLOSED_CAMPAIGN_KEYWORDS = ['closed', 'won', 'lost', 'dead'];
 
 export function isCampaignClosed(status: string): boolean {
   const s = status.toLowerCase();
   return CLOSED_CAMPAIGN_KEYWORDS.some(k => s.includes(k));
+}
+
+export function isCampaignPlanned(status: string): boolean {
+  return status.toLowerCase().includes('planned');
+}
+
+// Active = the cake is out in the world and the account is being worked
+export function isCampaignActive(status: string): boolean {
+  return !isCampaignClosed(status) && !isCampaignPlanned(status);
 }
 
 // No "Next Follow-up Date" column exists, so snoozing a Today-view contact
@@ -278,25 +310,30 @@ export interface TierContact extends Contact {
 export interface CompanyGroup {
   company: string;
   tier: Tier;
+  stage: string | null; // campaign stage for Tier 1 companies, null for pure Tier 2 groups
   contacts: TierContact[];
   maxOverdueDays: number | null;
 }
 
-// Unified "Today" queue: groups the highest-priority follow-ups by company —
-// cake-campaign accounts (Tier 1) and contacts who replied positively then
-// went quiet (Tier 2). Companies marked closed in the Campaigns tab
-// (Closed-Lost, Closed Won, etc.) drop out of Tier 1 entirely.
+// Unified "Today" queue, cadence-based:
+// - Tier 1: contacts at active cake-campaign companies (Delivered/Reply/Meeting/
+//   Pipeline). Due when never touched, or >= cakeTouchDays WORKING days since
+//   last touch — not "everyone, every day".
+// - Tier 2: Interested/Yes replies from anywhere, due >= hotTouchDays calendar
+//   days after last touch. Hot leads chase faster than the 14-day cycle.
+// - A booked call (col R) graduates a contact out of both tiers.
+// - Planned campaigns aren't chased yet; Closed Won/Lost are out entirely.
 export function getTodayQueue(
   contacts: Contact[],
   campaigns: CampaignEntry[],
-  goneColdDays: number,
+  cakeTouchDays: number,
+  hotTouchDays: number,
   snoozes: Record<number, Date> = {}
 ): CompanyGroup[] {
-  const cakeCompanies = new Set(
-    campaigns
-      .filter(c => !isCampaignClosed(c.status))
-      .map(c => normalizeCompany(c.company))
-  );
+  const stageByCompany = new Map<string, string>();
+  campaigns.forEach(c => {
+    if (isCampaignActive(c.status)) stageByCompany.set(normalizeCompany(c.company), c.status);
+  });
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -306,29 +343,35 @@ export function getTodayQueue(
   contacts.forEach(c => {
     if (isDead(c)) return;
     if (!c.company) return;
+    if (c.callBooked) return;
     const snoozedUntil = snoozes[c.rowIndex];
     if (snoozedUntil && snoozedUntil.getTime() >= today.getTime()) return;
 
-    const isCakeCompany = cakeCompanies.has(normalizeCompany(c.company));
+    const key = normalizeCompany(c.company);
+    const campaignStage = stageByCompany.get(key) ?? null;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    const days = daysAgo(c.lastContacted);
 
     let tier: Tier | null = null;
     let overdueDays: number | null = null;
 
-    if (isCakeCompany) {
-      tier = 1;
-      overdueDays = days !== null ? days - goneColdDays : null;
-    } else if (isPositive && days !== null && days >= goneColdDays) {
-      tier = 2;
-      overdueDays = days - goneColdDays;
+    if (campaignStage) {
+      const bdays = businessDaysAgo(c.lastContacted);
+      if (bdays === null || bdays >= cakeTouchDays) {
+        tier = 1;
+        overdueDays = bdays !== null ? bdays - cakeTouchDays : null;
+      }
+    } else if (isPositive) {
+      const days = daysAgo(c.lastContacted);
+      if (days === null || days >= hotTouchDays) {
+        tier = 2;
+        overdueDays = days !== null ? days - hotTouchDays : null;
+      }
     }
 
     if (tier === null) return;
 
-    const key = normalizeCompany(c.company);
     if (!groups.has(key)) {
-      groups.set(key, { company: c.company, tier, contacts: [], maxOverdueDays: null });
+      groups.set(key, { company: c.company, tier, stage: campaignStage, contacts: [], maxOverdueDays: null });
     }
     const group = groups.get(key)!;
     if (tier < group.tier) group.tier = tier;
@@ -337,7 +380,14 @@ export function getTodayQueue(
 
   const result = Array.from(groups.values());
   result.forEach(g => {
-    g.contacts.sort((a, b) => a.tier - b.tier || (b.overdueDays ?? -Infinity) - (a.overdueDays ?? -Infinity));
+    g.contacts.sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      // Within a company: engaged contacts (positive reply) come first
+      const aPos = POSITIVE_REPLIES.includes(a.reply.toLowerCase()) ? 0 : 1;
+      const bPos = POSITIVE_REPLIES.includes(b.reply.toLowerCase()) ? 0 : 1;
+      if (aPos !== bPos) return aPos - bPos;
+      return (b.overdueDays ?? -Infinity) - (a.overdueDays ?? -Infinity);
+    });
     g.maxOverdueDays = g.contacts.reduce<number | null>(
       (max, c) => (c.overdueDays !== null && (max === null || c.overdueDays > max) ? c.overdueDays : max),
       null

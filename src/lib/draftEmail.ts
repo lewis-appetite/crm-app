@@ -1,4 +1,4 @@
-import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, todayDMY, Contact } from '@/lib/sheets';
+import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, businessDaysAgo, todayDMY, Contact } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 import { fetchFromAppsScript } from '@/lib/appsScript';
 
@@ -35,21 +35,6 @@ function contactHistory(c: Contact, templateText: Record<string, string>): strin
     c.comment ? `notes: ${c.comment}` : '',
   ].filter(Boolean);
   return '- ' + parts.join(' | ');
-}
-
-function businessDaysAgo(dateStr: string): number | null {
-  const days = daysAgo(dateStr);
-  if (days === null) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let count = 0;
-  const cursor = new Date(today);
-  for (let i = 0; i < days; i++) {
-    cursor.setDate(cursor.getDate() - 1);
-    const dow = cursor.getDay();
-    if (dow !== 0 && dow !== 6) count++;
-  }
-  return count;
 }
 
 // Deterministic pre-draft warnings — computed from sheet data alone.

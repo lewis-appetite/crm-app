@@ -35,7 +35,7 @@ Three Google Sheets tabs:
 | 14 | O | Comment |
 | 15 | P | Email |
 | 16 | Q | Phone |
-| 17 | R | Call booked (date, DD/MM/YYYY — not yet read by the app) |
+| 17 | R | Call booked (date, DD/MM/YYYY — set by the Today tab's "Meeting booked" action; graduates the contact out of both Today queues) |
 
 Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must be APPENDED (S, T, …), never inserted mid-sheet. All date columns display DD/MM/YYYY; the app parses displayed values, so never change that display format. Cols I/L/M have sheet-side dropdown validation fed from Messages!C (warning mode, not reject — reject would break Apps Script writes).
 
@@ -58,9 +58,23 @@ Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must
 | F | Template abbreviation |
 | G | Detail (reply value for `reply` actions) |
 
-Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts.
+Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts. Other actions logged: `snooze` (detail = reappear date, read by `getActiveSnoozes`), `emaildraft` (detail = auto/manual, drives auto-draft dedupe), `callbooked`.
+
+### Campaigns tab (cake-campaign pipeline)
+| Col | Field |
+|-----|-------|
+| A | Company (matched to Connections via `normalizeCompany`) |
+| B | Status — lifecycle stages mirroring the Appetite platform: `Planned` / `Delivered` / `Reply` / `Meeting` / `Pipeline` / `Closed Won` / `Closed Lost` |
+| C | Cake sent (date — auto-stamped by the Apps Script on first transition to Delivered) |
+| D | Notes |
+
+Legacy statuses still work by keyword: anything containing closed/won/lost/dead is closed, containing planned is planned, everything else (e.g. old "Cake sent" values) is active. Managed from the Today tab's Manage companies panel (stage dropdown per company).
 
 ## Key Logic (`src/lib/sheets.ts`)
+
+**Today queue** (`getTodayQueue`) — two cadence-based tiers, grouped by company, excluding dead contacts, snoozed contacts, and anyone with Call booked set:
+- **Tier 1 (🎂)**: contacts at active campaign companies (Delivered/Reply/Meeting/Pipeline). Due when never touched or ≥ `CAKE_TOUCH_DAYS` (default 3) **working** days since last touch. Within a company, positive-reply contacts sort first.
+- **Tier 2 (🔥)**: `Reply` = Interested/Yes anywhere else. Due when ≥ `HOT_TOUCH_DAYS` (default 2) calendar days since last touch.
 
 **Follow-up queue** — contacts where:
 - `message` is set (initial message was sent)
@@ -91,7 +105,8 @@ GOOGLE_SHEETS_API_KEY=
 GOOGLE_APPS_SCRIPT_URL=
 FOLLOW_UP_INTERVAL_DAYS=14
 DAILY_NEW_GOAL=25
-GONE_COLD_DAYS=8
+CAKE_TOUCH_DAYS=3
+HOT_TOUCH_DAYS=2
 FULLENRICH_API_KEY=
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-sonnet-5

@@ -13,7 +13,8 @@ import { fetchSheetRange } from '@/lib/sheetsApi';
 
 const INTERVAL = parseInt(process.env.FOLLOW_UP_INTERVAL_DAYS || '14');
 const DAILY_NEW_GOAL = parseInt(process.env.DAILY_NEW_GOAL || '25');
-const GONE_COLD_DAYS = parseInt(process.env.GONE_COLD_DAYS || '8');
+const CAKE_TOUCH_DAYS = parseInt(process.env.CAKE_TOUCH_DAYS || '3');
+const HOT_TOUCH_DAYS = parseInt(process.env.HOT_TOUCH_DAYS || '2');
 
 export async function GET() {
   try {
@@ -32,7 +33,7 @@ export async function GET() {
     const followUps = getFollowUpQueue(contacts, INTERVAL);
     const newContacts = getNewContactsQueue(contacts);
     const snoozes = getActiveSnoozes(activity);
-    const today = getTodayQueue(contacts, campaigns, GONE_COLD_DAYS, snoozes);
+    const today = getTodayQueue(contacts, campaigns, CAKE_TOUCH_DAYS, HOT_TOUCH_DAYS, snoozes);
 
     return NextResponse.json({
       followUps,

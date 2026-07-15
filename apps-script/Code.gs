@@ -43,19 +43,27 @@ function doPost(e) {
   if (body.campaign) {
     var campSheet = ss.getSheetByName('Campaigns');
     if (campSheet) {
+      var isDelivered = String(body.campaign.status || '').toLowerCase() === 'delivered';
+      var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
       var rows = campSheet.getDataRange().getValues();
       var target = String(body.campaign.company).trim().toLowerCase();
       var found = false;
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][0]).trim().toLowerCase() === target) {
-          if (body.campaign.status !== undefined) campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+          if (body.campaign.status !== undefined) {
+            campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+            // first transition to Delivered stamps the cake-sent date
+            if (isDelivered && !String(rows[i][2] || '').trim()) {
+              campSheet.getRange(i + 1, 3).setValue(todayStr);
+            }
+          }
           if (body.campaign.notes !== undefined) campSheet.getRange(i + 1, 4).setValue(body.campaign.notes);
           found = true;
           break;
         }
       }
       if (!found) {
-        campSheet.appendRow([body.campaign.company, body.campaign.status || '', '', body.campaign.notes || '']);
+        campSheet.appendRow([body.campaign.company, body.campaign.status || '', isDelivered ? todayStr : '', body.campaign.notes || '']);
       }
     }
   }

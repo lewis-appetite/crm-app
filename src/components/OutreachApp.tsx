@@ -5,7 +5,7 @@ import {
   Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier, CampaignEntry,
   suggestMessage, daysAgo, parseDate, todayDMY, isCampaignClosed,
   getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
-  getStats, Stats,
+  getStats, Stats, CAMPAIGN_STAGES,
 } from '@/lib/sheets';
 
 interface CakeImage {
@@ -34,8 +34,8 @@ interface SheetData {
 type Tab = 'followup' | 'new' | 'today' | 'messages' | 'cake' | 'connections' | 'stats';
 
 const TIER_LABELS: Record<Tier, string> = {
-  1: 'Cake sent',
-  2: 'Interested, gone cold',
+  1: 'Cake campaign',
+  2: 'Interested reply',
 };
 const TIER_ICONS: Record<Tier, string> = { 1: '\u{1F382}', 2: '\u{1F525}' };
 const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm' };
@@ -581,6 +581,22 @@ export default function OutreachApp() {
     }
   }
 
+  async function handleMeetingBooked(c: Contact) {
+    await updateSheet(c.rowIndex, [{ col: 'R', value: todayDMY() }], {
+      action: 'callbooked',
+      name: c.fullName,
+      company: c.company,
+    });
+    setData(prev => {
+      if (!prev) return prev;
+      const upd = (x: Contact) => (x.rowIndex !== c.rowIndex ? x : { ...x, callBooked: todayDMY() });
+      return { ...prev, allContacts: prev.allContacts.map(upd) };
+    });
+    setDismissed(prev => new Set(prev).add(c.rowIndex));
+    setActiveMenu(null);
+    setCelebration({ title: '\u{1F4C5} Meeting booked!', detail: `${c.fullName} at ${c.company} — nice work` });
+  }
+
   async function handleAddCompany(companyArg?: string) {
     const company = (companyArg ?? newCompanyName).trim();
     if (!company) return;
@@ -589,22 +605,22 @@ export default function OutreachApp() {
       if (!prev) return prev;
       const existing = prev.campaigns.find(c => normAbbr(c.company) === normAbbr(company));
       const campaigns = existing
-        ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Cake sent' } : c))
-        : [...prev.campaigns, { company, status: 'Cake sent', cakeSentDate: '', notes: '' }];
+        ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Planned' } : c))
+        : [...prev.campaigns, { company, status: 'Planned', cakeSentDate: '', notes: '' }];
       return { ...prev, campaigns };
     });
-    await updateCampaign(company, { status: 'Cake sent' });
+    await updateCampaign(company, { status: 'Planned' });
     // the watched-company change affects Today's tier grouping, which is
     // computed server-side — refetch so the new company's contacts appear
     await silentRefresh();
   }
 
-  async function handleRemoveCompany(company: string) {
+  async function handleSetCompanyStage(company: string, status: string) {
     setData(prev => {
       if (!prev) return prev;
-      return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status: 'Closed' } : c)) };
+      return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status } : c)) };
     });
-    await updateCampaign(company, { status: 'Closed' });
+    await updateCampaign(company, { status });
     await silentRefresh();
   }
 
@@ -1386,13 +1402,20 @@ export default function OutreachApp() {
                         <div key={c.company} className={styles.manageRow}>
                           <div className={styles.manageRowTop}>
                             <span className={styles.manageRowName}>{c.company}</span>
-                            <button
-                              className={styles.manageRemoveBtn}
-                              onClick={() => handleRemoveCompany(c.company)}
-                              aria-label={`Stop watching ${c.company}`}
+                            {c.cakeSentDate && <span className={styles.manageCakeDate}>🎂 {c.cakeSentDate}</span>}
+                            <select
+                              className={styles.manageStageSelect}
+                              value={CAMPAIGN_STAGES.includes(c.status as typeof CAMPAIGN_STAGES[number]) ? c.status : ''}
+                              onChange={e => e.target.value && handleSetCompanyStage(c.company, e.target.value)}
+                              aria-label={`Campaign stage for ${c.company}`}
                             >
-                              &times;
-                            </button>
+                              {!CAMPAIGN_STAGES.includes(c.status as typeof CAMPAIGN_STAGES[number]) && (
+                                <option value="">{c.status || '— set stage —'}</option>
+                              )}
+                              {CAMPAIGN_STAGES.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
                           </div>
                           <div className={styles.manageNotesRow}>
                             <input
@@ -1438,7 +1461,7 @@ export default function OutreachApp() {
                     >
                       <span className={styles.companyName}>{g.company}</span>
                       <span className={`${styles.companyTierBadge} ${styles[TIER_STYLE[g.tier]]}`}>
-                        {TIER_ICONS[g.tier]} {TIER_LABELS[g.tier]}
+                        {TIER_ICONS[g.tier]} {g.tier === 1 && g.stage ? g.stage : TIER_LABELS[g.tier]}
                       </span>
                       {g.maxOverdueDays !== null && g.maxOverdueDays > 0 && (
                         <span className={styles.overdueBadge}>+{g.maxOverdueDays}d</span>
@@ -1499,6 +1522,7 @@ export default function OutreachApp() {
                               ) : menu === 'replied' ? (
                                 <div className={styles.todayMenuRow}>
                                   <button className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`} onClick={() => handleReplied(c, 'Interested')}>Interested</button>
+                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`} onClick={() => handleMeetingBooked(c)}>Meeting booked</button>
                                   <button className={`${styles.todayMenuBtn} ${styles.todayMenuRed}`} onClick={() => handleReplied(c, 'Not interested')}>Not interested</button>
                                   <button className={styles.todayMenuBtn} onClick={() => setActiveMenu(null)}>Cancel</button>
                                 </div>
