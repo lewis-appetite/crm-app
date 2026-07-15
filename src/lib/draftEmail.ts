@@ -98,7 +98,7 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     },
     body: JSON.stringify({
       model,
-      max_tokens: 600,
+      max_completion_tokens: 600,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
