@@ -164,6 +164,15 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
   }
   const { targetThreadId, text: gmailContextText } = formatGmailThreads(gmailThreads, target.email);
 
+  // Diagnostic: threads exist at this company but none matched the target's
+  // exact email — most likely the address on file differs from whatever
+  // address the real prior thread actually used (alias, typo, reformatting).
+  if (gmailThreads.length > 0 && !targetThreadId) {
+    warnings.push(
+      `Found ${gmailThreads.length} email thread(s) at ${target.company} but none matched ${target.email} directly — created a new email instead of a reply.`
+    );
+  }
+
   const context = [
     `TARGET CONTACT:`,
     contactHistory(target, templateText),
