@@ -10,6 +10,14 @@ function doPost(e) {
   var body = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // Read-only request — short-circuits before any of the write branches below
+  if (body.gmailSearch) {
+    var threads = searchGmailContext_(body.gmailSearch.targetEmail, body.gmailSearch.companyDomain);
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true, threads: threads }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (body.rowIndex && body.cells && body.cells.length > 0) {
     var sheet = ss.getSheetByName('Connections');
     body.cells.forEach(function (c) {
@@ -53,12 +61,72 @@ function doPost(e) {
   }
 
   if (body.draft && body.draft.to) {
-    GmailApp.createDraft(body.draft.to, body.draft.subject || '', body.draft.body || '');
+    var draftCreated = false;
+    if (body.draft.threadId) {
+      try {
+        GmailApp.getThreadById(body.draft.threadId).createDraftReply(body.draft.body || '');
+        draftCreated = true;
+      } catch (err) {
+        // thread may have been deleted/inaccessible since we found it — fall through to a new email
+      }
+    }
+    if (!draftCreated) {
+      GmailApp.createDraft(body.draft.to, body.draft.subject || '', body.draft.body || '');
+    }
   }
 
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Searches Gmail for the target contact's own thread plus anyone else at the
+// same company domain. Returns up to ~15 recent messages across the matching
+// threads (last 3 per thread) so the drafting prompt can reference real prior
+// correspondence instead of just CRM columns.
+function searchGmailContext_(targetEmail, companyDomain) {
+  if (!targetEmail) return [];
+  var me = Session.getActiveUser().getEmail();
+  var query = companyDomain
+    ? '(from:@' + companyDomain + ' OR to:@' + companyDomain + ')'
+    : '(from:' + targetEmail + ' OR to:' + targetEmail + ')';
+
+  var threads = GmailApp.search(query, 0, 20);
+  var results = [];
+  var totalMessages = 0;
+
+  for (var i = 0; i < threads.length && totalMessages < 15; i++) {
+    var thread = threads[i];
+    var messages = thread.getMessages();
+    var recent = messages.slice(Math.max(0, messages.length - 3));
+
+    var isTargetThread = messages.some(function (m) {
+      var from = (m.getFrom() || '').toLowerCase();
+      var to = (m.getTo() || '').toLowerCase();
+      return from.indexOf(targetEmail.toLowerCase()) !== -1 || to.indexOf(targetEmail.toLowerCase()) !== -1;
+    });
+
+    var msgSummaries = recent.map(function (m) {
+      totalMessages++;
+      var from = m.getFrom() || '';
+      var direction = from.toLowerCase().indexOf(me.toLowerCase()) !== -1 ? 'sent' : 'received';
+      return {
+        date: Utilities.formatDate(m.getDate(), Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+        from: from,
+        direction: direction,
+        body: (m.getPlainBody() || '').slice(0, 500),
+      };
+    });
+
+    results.push({
+      threadId: thread.getId(),
+      subject: thread.getFirstMessageSubject(),
+      isTargetThread: isTargetThread,
+      messages: msgSummaries,
+    });
+  }
+
+  return results;
 }
 
 // One-time data hygiene setup — run manually from the editor (Run > setupDataHygiene).

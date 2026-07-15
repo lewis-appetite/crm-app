@@ -15,10 +15,21 @@ export interface AppsScriptPayload {
     detail: string;
   };
   campaign?: { company: string; status?: string; notes?: string };
-  draft?: { to: string; subject: string; body: string };
+  draft?: { to: string; subject: string; body: string; threadId?: string };
+  gmailSearch?: { targetEmail: string; companyDomain?: string };
 }
 
 export async function postToAppsScript(payload: AppsScriptPayload): Promise<void> {
+  await callAppsScript(payload);
+}
+
+// For request types that return real data (currently just gmailSearch) rather
+// than the generic { ok: true } write acknowledgement.
+export async function fetchFromAppsScript<T>(payload: AppsScriptPayload): Promise<T> {
+  return callAppsScript(payload) as Promise<T>;
+}
+
+async function callAppsScript(payload: AppsScriptPayload): Promise<unknown> {
   const scriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
   if (!scriptUrl) throw new Error('GOOGLE_APPS_SCRIPT_URL is not configured');
 
@@ -32,9 +43,10 @@ export async function postToAppsScript(payload: AppsScriptPayload): Promise<void
   // Apps Script returns 200 with an HTML error page when the script throws,
   // so any non-JSON body means the write failed
   const text = await res.text();
-  let scriptOk = false;
-  try { JSON.parse(text); scriptOk = true; } catch { /* HTML error page */ }
-  if (!res.ok || !scriptOk) {
+  let json: unknown;
+  try { json = JSON.parse(text); } catch { /* HTML error page */ }
+  if (!res.ok || json === undefined) {
     throw new Error(`Apps Script responded ${res.status}: ${text.slice(0, 200)}`);
   }
+  return json;
 }

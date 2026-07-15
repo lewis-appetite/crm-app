@@ -1,11 +1,25 @@
 import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, todayDMY, Contact } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
-import { postToAppsScript } from '@/lib/appsScript';
+import { postToAppsScript, fetchFromAppsScript } from '@/lib/appsScript';
 
 export type DraftEmailResult =
   | { ok: true; skipped: false; to: string; subject: string; warnings: string[] }
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
+
+interface GmailMessageSummary {
+  date: string;
+  from: string;
+  direction: 'sent' | 'received';
+  body: string;
+}
+
+interface GmailThreadSummary {
+  threadId: string;
+  subject: string;
+  isTargetThread: boolean;
+  messages: GmailMessageSummary[];
+}
 
 function contactHistory(c: Contact, templateText: Record<string, string>): string {
   const touches: string[] = [];
@@ -38,10 +52,9 @@ function businessDaysAgo(dateStr: string): number | null {
   return count;
 }
 
-// Deterministic pre-draft warnings — computed from sheet data alone, no LLM
-// needed. "Ball in their court" (reading what a reply actually committed to)
-// is a separate, LLM-judgment feature layered on once Gmail thread search
-// is wired in — that needs real message content, not just CRM columns.
+// Deterministic pre-draft warnings — computed from sheet data alone.
+// "Ball in their court" is a separate, LLM-judgment warning added after the
+// drafting call, since it requires reading actual email content.
 function buildWarnings(target: Contact, colleagues: Contact[]): string[] {
   const warnings: string[] = [];
 
@@ -64,6 +77,33 @@ function buildWarnings(target: Contact, colleagues: Contact[]): string[] {
   }
 
   return warnings;
+}
+
+function formatGmailThreads(threads: GmailThreadSummary[], targetEmail: string): { targetThreadId: string | null; text: string } {
+  const formatThread = (t: GmailThreadSummary) =>
+    [
+      `Subject: "${t.subject}"`,
+      ...t.messages.map(m => `  [${m.direction}, ${m.date}] ${m.from}: ${m.body.replace(/\s+/g, ' ').trim()}`),
+    ].join('\n');
+
+  if (threads.length === 0) {
+    return { targetThreadId: null, text: 'No prior email history found for this contact or company.' };
+  }
+
+  const targetThread = threads.find(t => t.isTargetThread) ?? null;
+  const colleagueThreads = threads.filter(t => !t.isTargetThread);
+
+  const parts: string[] = [];
+  parts.push(
+    targetThread
+      ? `PAST EMAIL THREAD WITH ${targetEmail} (draft as a reply to this):\n${formatThread(targetThread)}`
+      : `No prior email thread with ${targetEmail} directly — this will be a new email, not a reply.`
+  );
+  if (colleagueThreads.length) {
+    parts.push('', `EMAIL THREADS WITH OTHER PEOPLE AT THIS COMPANY:`, colleagueThreads.map(formatThread).join('\n\n'));
+  }
+
+  return { targetThreadId: targetThread?.threadId ?? null, text: parts.join('\n') };
 }
 
 // Drafts an email for a contact and saves it to Gmail drafts.
@@ -110,6 +150,20 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
   const campaign = campaigns.find(c => normalizeCompany(c.company) === companyKey);
   const warnings = buildWarnings(target, colleagues);
 
+  // Best-effort — a Gmail search failure shouldn't block drafting, it just
+  // means the draft falls back to CRM-only context (LinkedIn touches, replies).
+  let gmailThreads: GmailThreadSummary[] = [];
+  const emailDomain = target.email.split('@')[1];
+  try {
+    const result = await fetchFromAppsScript<{ threads: GmailThreadSummary[] }>({
+      gmailSearch: { targetEmail: target.email, companyDomain: emailDomain },
+    });
+    gmailThreads = result.threads ?? [];
+  } catch (err) {
+    console.error('Gmail context search failed, continuing without it', err);
+  }
+  const { targetThreadId, text: gmailContextText } = formatGmailThreads(gmailThreads, target.email);
+
   const context = [
     `TARGET CONTACT:`,
     contactHistory(target, templateText),
@@ -117,8 +171,11 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     `COMPANY: ${target.company}`,
     campaign ? `Cake campaign status: ${campaign.status}${campaign.cakeSentDate ? ` (cake sent ${campaign.cakeSentDate})` : ''}${campaign.notes ? ` — notes: ${campaign.notes}` : ''}` : 'No cake campaign for this company.',
     ``,
-    `OTHER PEOPLE I'VE CONTACTED AT ${target.company.toUpperCase()}:`,
+    `OTHER PEOPLE I'VE CONTACTED AT ${target.company.toUpperCase()} (per CRM, LinkedIn-side):`,
     colleagues.length ? colleagues.map(c => contactHistory(c, templateText)).join('\n') : '- none yet',
+    ``,
+    `EMAIL HISTORY (from Gmail):`,
+    gmailContextText,
   ].join('\n');
 
   const systemPrompt = [
@@ -128,14 +185,19 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     `- Lead with substance: a result, a specific reason for writing, or a question. NEVER open with "following up", "circling back", "just checking in", or any phrase that labels the email as a follow-up.`,
     `- Max 3 short paragraphs of 1-2 sentences each. Must be skimmable.`,
     `- One purpose per email, ending in exactly one closing question.`,
-    `- Personalise from real context: their role, their company, what was actually said. No generic filler.`,
+    `- Personalise from real context: their role, their company, what was actually said in prior LinkedIn messages or emails. No generic filler.`,
+    `- If EMAIL HISTORY shows a past thread with this contact, this is a reply — reference what was actually said, don't reintroduce yourself or the cake concept from scratch.`,
     `- Only these proof points may be used, verbatim meaning — never invent or inflate stats: "my last campaign booked meetings with 43% of my target list on day one" and "businesses adopting cold caking are booking meetings with 30% of their target accounts."`,
     `- No fake urgency or manufactured deadlines.`,
     `- Tone: casual, confident, light cake wordplay allowed but max one pun.`,
     `- Don't invent facts, meetings, or interest that isn't in the context.`,
     `- Sign off exactly: "Best,\\nLewis"`,
     ``,
-    `Subject should be short and lowercase, referencing the cake or their office where natural. Call the write_email tool with the finished subject and body — body should have real line breaks between paragraphs.`,
+    `Subject should be short and lowercase, referencing the cake or their office where natural (skip this if replying in an existing thread — it's ignored for replies).`,
+    ``,
+    `Also judge from EMAIL HISTORY: if the target's own last message committed to an action ("I'll check with X", "let me get back to you", "I'll loop in Y"), set ballInTheirCourt=true with a one-sentence note on what they owe — this doesn't change what you write, it's a separate heads-up.`,
+    ``,
+    `Call the write_email tool with the finished draft.`,
   ].join('\n');
 
   // Forced tool use instead of "reply with JSON in text" - guarantees a real
@@ -151,7 +213,7 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     },
     body: JSON.stringify({
       model,
-      max_tokens: 600,
+      max_tokens: 700,
       system: systemPrompt,
       messages: [{ role: 'user', content: context }],
       tools: [
@@ -161,8 +223,10 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
           input_schema: {
             type: 'object',
             properties: {
-              subject: { type: 'string', description: 'Short, lowercase email subject' },
+              subject: { type: 'string', description: 'Short, lowercase email subject (ignored if replying in an existing thread)' },
               body: { type: 'string', description: 'The full email body, with real line breaks between paragraphs' },
+              ballInTheirCourt: { type: 'boolean', description: 'True if their last message committed to an action they still owe' },
+              ballInTheirCourtNote: { type: 'string', description: 'One sentence on what they owe, if ballInTheirCourt is true' },
             },
             required: ['subject', 'body'],
           },
@@ -184,8 +248,13 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     return { ok: false, error: 'Model returned an incomplete draft (missing subject or body)' };
   }
 
+  if (toolUse?.input?.ballInTheirCourt) {
+    const note = toolUse.input.ballInTheirCourtNote?.trim();
+    warnings.push(note ? `Ball's in their court — ${note}` : `They may already owe you a reply — check before chasing.`);
+  }
+
   await postToAppsScript({
-    draft: { to: target.email, subject, body },
+    draft: { to: target.email, subject, body, ...(targetThreadId ? { threadId: targetThreadId } : {}) },
     log: {
       date: todayDMY(),
       rowIndex,
