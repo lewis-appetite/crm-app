@@ -431,6 +431,7 @@ export default function OutreachApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          rowIndex: c.rowIndex,
           firstName: c.firstName,
           lastName: c.lastName,
           company: c.company,
@@ -440,14 +441,19 @@ export default function OutreachApp() {
       const startJson = await startRes.json();
       if (!startRes.ok || startJson.error) throw new Error(startJson.error || 'Enrichment failed to start');
 
+      // The server writes the email + triggers the draft as soon as it sees FINISHED
+      // (whether via this poll or the FullEnrich webhook, whichever gets there first) -
+      // if this tab closes or the phone locks mid-poll, the webhook still finishes the job.
       let email: string | null = null;
+      let drafted = false;
       for (let i = 0; i < 40; i++) {
         await new Promise(r => setTimeout(r, 3000));
-        const pollRes = await fetch(`/api/enrich?id=${encodeURIComponent(startJson.enrichmentId)}`);
+        const pollRes = await fetch(`/api/enrich?id=${encodeURIComponent(startJson.enrichmentId)}&rowIndex=${c.rowIndex}`);
         const pollJson = await pollRes.json();
         if (pollJson.error) throw new Error(pollJson.error);
         if (pollJson.status === 'FINISHED') {
           email = pollJson.email;
+          drafted = !!pollJson.drafted;
           break;
         }
         if (['CANCELED', 'CREDITS_INSUFFICIENT', 'RATE_LIMIT'].includes(pollJson.status)) {
@@ -459,9 +465,11 @@ export default function OutreachApp() {
         setToast({ msg: `No email found for ${c.fullName}`, kind: 'err' });
         return;
       }
-      await updateSheet(c.rowIndex, [{ col: 'P', value: email }]);
       setContactEmail(c.rowIndex, email);
-      setToast({ msg: `Found ${email}`, kind: 'ok' });
+      setToast({
+        msg: drafted ? `Found ${email} — draft saved to Gmail` : `Found ${email}`,
+        kind: 'ok',
+      });
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : 'Enrichment failed', kind: 'err' });
     } finally {

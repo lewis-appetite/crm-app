@@ -79,8 +79,9 @@ Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists becaus
 - `GET /api/sheet` — fetches Connections + Messages + Activity tabs, returns `{ followUps, newContacts, messages, allContacts, activity, intervalDays, dailyNewGoal }`
 - `POST /api/update` — forwards `{ rowIndex, cells, log? }` to the Apps Script web app, which updates Connections cells and appends `log` to the Activity tab
 - `GET /api/cake-images` — lists PNGs from the cake designs Drive folder, cached 300s
-- `POST /api/enrich` — starts a FullEnrich email lookup, returns `enrichmentId`; `GET /api/enrich?id=` polls it (client writes the found email to col P via `/api/update`)
-- `POST /api/draft-email` — `{ rowIndex }`: builds company context from the sheet (same-company contacts, templates, replies, campaign notes), asks Claude (claude-sonnet-5) for a short email, creates a Gmail draft via the Apps Script (`GmailApp.createDraft`)
+- `POST /api/enrich` — starts a FullEnrich email lookup (registers a webhook + the contact's rowIndex as a `custom` field), returns `enrichmentId`. `GET /api/enrich?id=&rowIndex=` polls it; on `FINISHED` it writes the email to col P and triggers an auto-draft itself (fast path for when the client is still around)
+- `POST /api/enrich/webhook` — FullEnrich calls this on `contact_finished`, independent of client polling. Verifies `X-Signature-SHA1` (HMAC-SHA1 of the raw body, `FULLENRICH_API_KEY` as secret) before trusting the payload. Same write + auto-draft path as the GET poll — this is what makes enrichment survive the phone locking or the tab closing mid-lookup
+- `POST /api/draft-email` — `{ rowIndex }`: manual draft trigger (button tap), always drafts regardless of same-day history. Both this and the auto-draft path share `src/lib/draftEmail.ts`, which builds company context from the sheet (same-company contacts, templates, replies, campaign notes), asks Claude (claude-sonnet-5) for a short email, and creates a Gmail draft via the Apps Script (`GmailApp.createDraft`). Auto-drafts (`auto: true`) are guarded by a same-day dedupe check against the Activity log (action `emaildraft`, detail `auto`/`manual`) so a slow poll and a late webhook for the same enrichment can't both create a draft
 
 ## Environment Variables
 
