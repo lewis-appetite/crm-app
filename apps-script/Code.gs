@@ -60,23 +60,27 @@ function doPost(e) {
     }
   }
 
+  var draftMode = null;
+  var draftReplyError = null;
   if (body.draft && body.draft.to) {
-    var draftCreated = false;
+    draftMode = 'new';
     if (body.draft.threadId) {
       try {
         GmailApp.getThreadById(body.draft.threadId).createDraftReply(body.draft.body || '');
-        draftCreated = true;
+        draftMode = 'reply';
       } catch (err) {
-        // thread may have been deleted/inaccessible since we found it — fall through to a new email
+        // thread may have been deleted/inaccessible since we found it — fall through to a new email,
+        // but report why so it's visible instead of silently degrading every time
+        draftReplyError = String(err);
       }
     }
-    if (!draftCreated) {
+    if (draftMode !== 'reply') {
       GmailApp.createDraft(body.draft.to, body.draft.subject || '', body.draft.body || '');
     }
   }
 
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true }))
+    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 

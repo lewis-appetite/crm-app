@@ -1,6 +1,6 @@
 import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, todayDMY, Contact } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
-import { postToAppsScript, fetchFromAppsScript } from '@/lib/appsScript';
+import { fetchFromAppsScript } from '@/lib/appsScript';
 
 export type DraftEmailResult =
   | { ok: true; skipped: false; to: string; subject: string; warnings: string[] }
@@ -253,7 +253,7 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     warnings.push(note ? `Ball's in their court — ${note}` : `They may already owe you a reply — check before chasing.`);
   }
 
-  await postToAppsScript({
+  const draftResponse = await fetchFromAppsScript<{ draftMode: string | null; draftReplyError: string | null }>({
     draft: { to: target.email, subject, body, ...(targetThreadId ? { threadId: targetThreadId } : {}) },
     log: {
       date: todayDMY(),
@@ -265,6 +265,14 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
       detail: auto ? 'auto' : 'manual',
     },
   });
+
+  if (targetThreadId && draftResponse.draftMode !== 'reply') {
+    warnings.push(
+      draftResponse.draftReplyError
+        ? `Couldn't reply in the existing thread (${draftResponse.draftReplyError}) — created a new email instead.`
+        : `Couldn't reply in the existing thread — created a new email instead.`
+    );
+  }
 
   return { ok: true, skipped: false, to: target.email, subject, warnings };
 }
