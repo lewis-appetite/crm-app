@@ -91,9 +91,15 @@ function doPost(e) {
 function searchGmailContext_(targetEmail, companyDomain) {
   if (!targetEmail) return [];
   var me = Session.getActiveUser().getEmail();
+
+  // Always search the exact address (guaranteed-correct syntax) so the
+  // target's own thread doesn't depend on domain search working. Domain
+  // form is "from:domain.com", NOT "from:@domain.com" - the @ variant
+  // isn't valid Gmail search syntax and silently matches nothing.
+  var targetClause = '(from:' + targetEmail + ' OR to:' + targetEmail + ')';
   var query = companyDomain
-    ? '(from:@' + companyDomain + ' OR to:@' + companyDomain + ')'
-    : '(from:' + targetEmail + ' OR to:' + targetEmail + ')';
+    ? targetClause + ' OR (from:' + companyDomain + ' OR to:' + companyDomain + ')'
+    : targetClause;
 
   var threads = GmailApp.search(query, 0, 20);
   var results = [];
