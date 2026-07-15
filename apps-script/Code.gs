@@ -92,29 +92,38 @@ function searchGmailContext_(targetEmail, companyDomain) {
   if (!targetEmail) return [];
   var me = Session.getActiveUser().getEmail();
 
-  // Always search the exact address (guaranteed-correct syntax) so the
-  // target's own thread doesn't depend on domain search working. Domain
-  // form is "from:domain.com", NOT "from:@domain.com" - the @ variant
-  // isn't valid Gmail search syntax and silently matches nothing.
-  var targetClause = '(from:' + targetEmail + ' OR to:' + targetEmail + ')';
-  var query = companyDomain
-    ? targetClause + ' OR (from:' + companyDomain + ' OR to:' + companyDomain + ')'
-    : targetClause;
+  // Two separate searches, target's own threads first, so newer company-domain
+  // mail can never crowd the target's thread out of the result window.
+  // cc: is included because "involved in a thread" often means CC'd, which
+  // from:/to: alone would miss. Domain form is "from:domain.com" (no @).
+  var seen = {};
+  var ordered = [];
 
-  var threads = GmailApp.search(query, 0, 20);
+  var targetQuery = 'from:' + targetEmail + ' OR to:' + targetEmail + ' OR cc:' + targetEmail;
+  GmailApp.search(targetQuery, 0, 3).forEach(function (t) {
+    if (!seen[t.getId()]) {
+      seen[t.getId()] = true;
+      ordered.push({ thread: t, isTarget: true });
+    }
+  });
+
+  if (companyDomain) {
+    var domainQuery = 'from:' + companyDomain + ' OR to:' + companyDomain + ' OR cc:' + companyDomain;
+    GmailApp.search(domainQuery, 0, 15).forEach(function (t) {
+      if (!seen[t.getId()]) {
+        seen[t.getId()] = true;
+        ordered.push({ thread: t, isTarget: false });
+      }
+    });
+  }
+
   var results = [];
   var totalMessages = 0;
 
-  for (var i = 0; i < threads.length && totalMessages < 15; i++) {
-    var thread = threads[i];
+  for (var i = 0; i < ordered.length && totalMessages < 15; i++) {
+    var thread = ordered[i].thread;
     var messages = thread.getMessages();
     var recent = messages.slice(Math.max(0, messages.length - 3));
-
-    var isTargetThread = messages.some(function (m) {
-      var from = (m.getFrom() || '').toLowerCase();
-      var to = (m.getTo() || '').toLowerCase();
-      return from.indexOf(targetEmail.toLowerCase()) !== -1 || to.indexOf(targetEmail.toLowerCase()) !== -1;
-    });
 
     var msgSummaries = recent.map(function (m) {
       totalMessages++;
@@ -131,12 +140,22 @@ function searchGmailContext_(targetEmail, companyDomain) {
     results.push({
       threadId: thread.getId(),
       subject: thread.getFirstMessageSubject(),
-      isTargetThread: isTargetThread,
+      isTargetThread: ordered[i].isTarget,
       messages: msgSummaries,
     });
   }
 
   return results;
+}
+
+// Debug helper — run from the editor, then check the execution log.
+// Edit the address/domain to test other contacts.
+function testGmailSearch() {
+  var out = searchGmailContext_('patrick.p@omnea.co', 'omnea.co');
+  Logger.log('threads found: ' + out.length);
+  out.forEach(function (t) {
+    Logger.log((t.isTargetThread ? '[TARGET] ' : '[company] ') + '"' + t.subject + '" — ' + t.messages.length + ' messages');
+  });
 }
 
 // One-time data hygiene setup — run manually from the editor (Run > setupDataHygiene).
