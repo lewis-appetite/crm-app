@@ -25,6 +25,18 @@ function doPost(e) {
     });
   }
 
+  // Batch cell writes across multiple rows in one request — used for
+  // company-wide Priority column syncs so N contacts don't need N round trips
+  if (body.batch && body.batch.length > 0) {
+    var batchSheet = ss.getSheetByName('Connections');
+    body.batch.forEach(function (item) {
+      if (!item.rowIndex || !item.cells) return;
+      item.cells.forEach(function (c) {
+        batchSheet.getRange(c.col + item.rowIndex).setValue(c.value);
+      });
+    });
+  }
+
   if (body.log) {
     var logSheet = ss.getSheetByName('Activity');
     if (logSheet) {
@@ -236,6 +248,50 @@ function setupDataHygiene() {
 
 function normAbbr_(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// One-time backfill — run manually from the editor (Run > backfillPriorityColumn)
+// after adding the "Priority" header at S1. Populates every existing row;
+// going forward the app keeps individual rows in sync on company-stage
+// changes and reply changes (see /api/sync-priority in the Next.js app).
+function backfillPriorityColumn() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var conn = ss.getSheetByName('Connections');
+  var camp = ss.getSheetByName('Campaigns');
+
+  if (!String(conn.getRange('S1').getValue()).trim()) {
+    conn.getRange('S1').setValue('Priority');
+  }
+
+  var activeCompanies = {};
+  if (camp) {
+    camp.getDataRange().getValues().slice(1).forEach(function (r) {
+      var company = String(r[0] || '').trim();
+      var status = String(r[1] || '').trim().toLowerCase();
+      if (!company) return;
+      var closed = status.indexOf('closed') !== -1 || status.indexOf('won') !== -1 || status.indexOf('lost') !== -1 || status.indexOf('dead') !== -1;
+      var planned = status.indexOf('planned') !== -1;
+      if (!closed && !planned) activeCompanies[normAbbr_(company)] = true;
+    });
+  }
+
+  var numRows = conn.getLastRow() - 1;
+  if (numRows < 1) return;
+
+  var data = conn.getRange(2, 1, numRows, 10).getValues(); // A:J — need Company (D) and Reply (J)
+  var WORTHY = ['interested', 'yes', ''];
+  var priorities = data.map(function (row) {
+    var company = String(row[3] || '').trim();
+    var reply = String(row[9] || '').trim().toLowerCase();
+    var dead = WORTHY.indexOf(reply) === -1;
+    if (dead) return [''];
+    if (company && activeCompanies[normAbbr_(company)]) return ['\u{1F382} Cake'];
+    if (reply === 'interested' || reply === 'yes') return ['\u{1F525} Interested'];
+    return [''];
+  });
+
+  conn.getRange(2, 19, numRows, 1).setValues(priorities); // S
+  Logger.log('Backfilled Priority for ' + numRows + ' rows.');
 }
 
 // Run this ONCE manually from the editor (select from the function dropdown, click Run)

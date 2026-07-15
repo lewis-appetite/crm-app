@@ -17,6 +17,7 @@ export interface AppsScriptPayload {
   campaign?: { company: string; status?: string; notes?: string };
   draft?: { to: string; subject: string; body: string; threadId?: string };
   gmailSearch?: { targetEmail: string; companyDomain?: string };
+  batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
 }
 
 export async function postToAppsScript(payload: AppsScriptPayload): Promise<void> {

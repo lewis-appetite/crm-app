@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier, CampaignEntry,
-  suggestMessage, daysAgo, parseDate, todayDMY, isCampaignClosed,
+  suggestMessage, daysAgo, parseDate, todayDMY, isCampaignClosed, isCampaignActive, computePriorityLabel,
   getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
   getStats, Stats, CAMPAIGN_STAGES,
 } from '@/lib/sheets';
@@ -562,8 +562,26 @@ export default function OutreachApp() {
     setActiveMenu(null);
   }
 
+  function companyIsActive(company: string): boolean {
+    const campaign = data?.campaigns.find(camp => normAbbr(camp.company) === normAbbr(company));
+    return campaign ? isCampaignActive(campaign.status) : false;
+  }
+
+  async function syncPriority(company: string) {
+    try {
+      await fetch('/api/sync-priority', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company }),
+      });
+    } catch {
+      // best-effort — Priority is a visibility aid, not load-bearing for the app itself
+    }
+  }
+
   async function handleReplied(c: Contact, value: 'Interested' | 'Not interested') {
-    await updateSheet(c.rowIndex, [{ col: 'J', value }], {
+    const priority = computePriorityLabel({ ...c, reply: value }, companyIsActive(c.company));
+    await updateSheet(c.rowIndex, [{ col: 'J', value }, { col: 'S', value: priority }], {
       action: 'reply',
       detail: value,
       name: c.fullName,
@@ -571,7 +589,7 @@ export default function OutreachApp() {
     });
     setData(prev => {
       if (!prev) return prev;
-      const upd = (x: Contact) => (x.rowIndex !== c.rowIndex ? x : { ...x, reply: value });
+      const upd = (x: Contact) => (x.rowIndex !== c.rowIndex ? x : { ...x, reply: value, priority });
       return { ...prev, allContacts: prev.allContacts.map(upd) };
     });
     setDismissed(prev => new Set(prev).add(c.rowIndex));
@@ -610,6 +628,7 @@ export default function OutreachApp() {
       return { ...prev, campaigns };
     });
     await updateCampaign(company, { status: 'Planned' });
+    await syncPriority(company);
     // the watched-company change affects Today's tier grouping, which is
     // computed server-side — refetch so the new company's contacts appear
     await silentRefresh();
@@ -621,6 +640,7 @@ export default function OutreachApp() {
       return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, status } : c)) };
     });
     await updateCampaign(company, { status });
+    await syncPriority(company);
     await silentRefresh();
   }
 
@@ -790,6 +810,12 @@ export default function OutreachApp() {
     const creditedTemplate =
       editValues.followUpMessage2 || editValues.followUpMessage1 || editValues.message || '';
 
+    let newPriority: string | null = null;
+    if (replyChanged && prevContact) {
+      newPriority = computePriorityLabel({ ...prevContact, reply: editValues.reply }, companyIsActive(prevContact.company));
+      cells.push({ col: 'S', value: newPriority });
+    }
+
     await updateSheet(
       editingRowIndex,
       cells,
@@ -815,6 +841,7 @@ export default function OutreachApp() {
         followUpMessage2: editValues.followUpMessage2,
         lastContacted: editValues.lastContacted,
         comment: editValues.comment,
+        ...(newPriority !== null ? { priority: newPriority } : {}),
       };
     const updatedAll = data.allContacts.map(updateContact);
 

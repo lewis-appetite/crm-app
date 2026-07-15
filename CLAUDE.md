@@ -36,6 +36,7 @@ Three Google Sheets tabs:
 | 15 | P | Email |
 | 16 | Q | Phone |
 | 17 | R | Call booked (date, DD/MM/YYYY — set by the Today tab's "Meeting booked" action; graduates the contact out of both Today queues) |
+| 18 | S | Priority — app-written label ("🎂 Cake" / "🔥 Interested" / blank) so the reason a contact is being tracked closely is visible directly in the sheet, not just in Today. See `computePriorityLabel` |
 
 Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must be APPENDED (S, T, …), never inserted mid-sheet. All date columns display DD/MM/YYYY; the app parses displayed values, so never change that display format. Cols I/L/M have sheet-side dropdown validation fed from Messages!C (warning mode, not reject — reject would break Apps Script writes).
 
@@ -75,6 +76,8 @@ Legacy statuses still work by keyword: anything containing closed/won/lost/dead 
 **Today queue** (`getTodayQueue`) — two cadence-based tiers, grouped by company, excluding dead contacts, snoozed contacts, and anyone with Call booked set:
 - **Tier 1 (🎂)**: contacts at active campaign companies (Delivered/Reply/Meeting/Pipeline). Due when never touched or ≥ `CAKE_TOUCH_DAYS` (default 3) **working** days since last touch. Within a company, positive-reply contacts sort first.
 - **Tier 2 (🔥)**: `Reply` = Interested/Yes anywhere else. Due when ≥ `HOT_TOUCH_DAYS` (default 2) calendar days since last touch.
+
+**Priority column sync** — `computePriorityLabel` mirrors the tier logic above but without the cadence gating (it's "why track this contact" not "due today", so it doesn't need daily rewrites). Written to col S whenever the underlying reason could have changed: `POST /api/sync-priority` (`{ company }`) recomputes and batch-writes every contact at that company after a campaign stage change; single-contact Reply changes (Today tab, All tab) write col S inline in the same request. `apps-script/Code.gs backfillPriorityColumn()` is the one-time initializer for existing rows.
 
 **Follow-up queue** — contacts where:
 - `message` is set (initial message was sent)

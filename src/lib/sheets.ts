@@ -20,6 +20,7 @@ export interface Contact {
   email: string;
   phone: string;
   callBooked: string;
+  priority: string;
 }
 
 export interface Message {
@@ -57,7 +58,10 @@ const COL = {
   EMAIL: 15,
   PHONE: 16,
   CALL_BOOKED: 17,
+  PRIORITY: 18,
 };
+
+export const PRIORITY_COL = 'S';
 
 // Column letters for Sheets API updates (1-based column letters)
 export const SHEET_COLS = {
@@ -88,6 +92,7 @@ export function parseConnections(rows: string[][]): Contact[] {
     email: cleanContactField(row[COL.EMAIL]),
     phone: cleanContactField(row[COL.PHONE]),
     callBooked: (row[COL.CALL_BOOKED] || '').trim(),
+    priority: (row[COL.PRIORITY] || '').trim(),
   }));
 }
 
@@ -282,6 +287,19 @@ export function isCampaignPlanned(status: string): boolean {
 // Active = the cake is out in the world and the account is being worked
 export function isCampaignActive(status: string): boolean {
   return !isCampaignClosed(status) && !isCampaignPlanned(status);
+}
+
+// Materializes "why is this contact being tracked closely" into a plain-text
+// label written back to Connections col S (Priority) — so it's visible when
+// browsing the raw sheet, not just inside the Today tab. This mirrors
+// getTodayQueue's tier assignment but deliberately skips the cadence/due-date
+// gating: Priority reflects the stable reason (cake company / positive
+// reply), not "due today", so it doesn't need rewriting every day.
+export function computePriorityLabel(contact: Contact, isActiveCakeCompany: boolean): string {
+  if (isDead(contact)) return '';
+  if (isActiveCakeCompany) return '\u{1F382} Cake';
+  if (POSITIVE_REPLIES.includes(contact.reply.toLowerCase())) return '\u{1F525} Interested';
+  return '';
 }
 
 // No "Next Follow-up Date" column exists, so snoozing a Today-view contact
