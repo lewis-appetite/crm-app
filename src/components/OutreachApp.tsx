@@ -624,7 +624,7 @@ export default function OutreachApp() {
       const existing = prev.campaigns.find(c => normAbbr(c.company) === normAbbr(company));
       const campaigns = existing
         ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Planned' } : c))
-        : [...prev.campaigns, { company, status: 'Planned', cakeSentDate: '', notes: '' }];
+        : [...prev.campaigns, { company, status: 'Planned', cakeSentDate: '', notes: '', industry: '', companySize: '', fundingStage: '', region: '', icpSignal: '' }];
       return { ...prev, campaigns };
     });
     await updateCampaign(company, { status: 'Planned' });
@@ -1370,7 +1370,10 @@ export default function OutreachApp() {
           const visibleGroups = tierFilter
             ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
             : todayGroups;
-          const watchedCompanies = (data?.campaigns ?? []).filter(c => !isCampaignClosed(c.status));
+          // Require a real campaign status so ICP-only rows (no cake, blank
+          // Status, tracked purely for fit signal) never appear as if they're
+          // being actively chased
+          const watchedCompanies = (data?.campaigns ?? []).filter(c => c.status && !isCampaignClosed(c.status));
           const watchedKeys = new Set(watchedCompanies.map(c => normAbbr(c.company)));
           const allCompanyNames = Array.from(
             new Set((data?.allContacts ?? []).map(c => c.company).filter(Boolean))

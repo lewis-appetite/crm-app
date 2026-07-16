@@ -61,15 +61,22 @@ Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must
 
 Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts. Other actions logged: `snooze` (detail = reappear date, read by `getActiveSnoozes`), `emaildraft` (detail = auto/manual, drives auto-draft dedupe), `callbooked`.
 
-### Campaigns tab (cake-campaign pipeline)
+### Campaigns tab (cake-campaign pipeline + company-level ICP tracking)
 | Col | Field |
 |-----|-------|
 | A | Company (matched to Connections via `normalizeCompany`) |
-| B | Status — lifecycle stages mirroring the Appetite platform: `Planned` / `Delivered` / `Reply` / `Meeting` / `Pipeline` / `Closed Won` / `Closed Lost` |
+| B | Status — lifecycle stages mirroring the Appetite platform: `Planned` / `Delivered` / `Reply` / `Meeting` / `Pipeline` / `Closed Won` / `Closed Lost`. Blank for ICP-only rows (see below) |
 | C | Cake sent (date — auto-stamped by the Apps Script on first transition to Delivered) |
 | D | Notes |
+| E | Industry |
+| F | Company Size |
+| G | Funding Stage |
+| H | Region |
+| I | ICP Signal — for companies that never got a cake: `Interested (no cake)` / `Not a fit` / blank |
 
-Legacy statuses still work by keyword: anything containing closed/won/lost/dead is closed, containing planned is planned, everything else (e.g. old "Cake sent" values) is active. Managed from the Today tab's Manage companies panel (stage dropdown per company).
+Not every row is a real campaign — E–I let ICP-fit signal from ordinary (no-cake) LinkedIn/email outreach live alongside actual cake campaigns, so patterns can be found across both when asked. These rows are added directly in the sheet (no app UI for it), typically after Claude scans Connections for un-logged strong signals and hands over a candidate list to review.
+
+`isCampaignActive` (`src/lib/sheets.ts`) is a strict **allowlist** (status contains delivered/reply/meeting/pipeline/"cake sent") — deliberately not "anything not closed/planned", because blank-Status ICP rows must default to inactive or they'd silently get pulled into Today's Tier 1 cake-chase cadence. `isCampaignClosed`/`isCampaignPlanned` still keyword-match as before. The Manage Companies panel additionally requires a non-empty Status, so ICP-only rows never appear there either — that list is scoped to real campaigns only. Managed from the Today tab's Manage companies panel (stage dropdown per company) for real campaigns.
 
 ## Key Logic (`src/lib/sheets.ts`)
 

@@ -124,12 +124,23 @@ export function parseActivity(rows: string[][]): ActivityEvent[] {
     .filter(e => e.date && e.action);
 }
 
-// Campaigns tab: A Company | B Status | C Cake sent (date) | D Notes
+// Campaigns tab: A Company | B Status | C Cake sent (date) | D Notes |
+// E Industry | F Company Size | G Funding Stage | H Region | I ICP Signal
+//
+// Not every row here had a cake sent — E-I let ICP-fit signal from ordinary
+// (no-cake) outreach live alongside real cake campaigns, so patterns can be
+// found across both. Status/Cake sent stay meaningful only for actual
+// campaigns; blank Status is normal and expected for ICP-only rows.
 export interface CampaignEntry {
   company: string;
   status: string;
   cakeSentDate: string;
   notes: string;
+  industry: string;
+  companySize: string;
+  fundingStage: string;
+  region: string;
+  icpSignal: string;
 }
 
 export function parseCampaigns(rows: string[][]): CampaignEntry[] {
@@ -140,6 +151,11 @@ export function parseCampaigns(rows: string[][]): CampaignEntry[] {
       status: (row[1] || '').trim(),
       cakeSentDate: (row[2] || '').trim(),
       notes: (row[3] || '').trim(),
+      industry: (row[4] || '').trim(),
+      companySize: (row[5] || '').trim(),
+      fundingStage: (row[6] || '').trim(),
+      region: (row[7] || '').trim(),
+      icpSignal: (row[8] || '').trim(),
     }))
     .filter(c => c.company);
 }
@@ -269,11 +285,11 @@ export function normalizeCompany(s: string): string {
 }
 
 // Campaign lifecycle — mirrors the Appetite platform's stages.
-// Legacy free-text values still work: "Cake sent" maps to active,
-// "Closed-lost" matches the closed keywords.
+// "Closed-lost" (legacy hyphenated form) still matches the closed keywords.
 export const CAMPAIGN_STAGES = ['Planned', 'Delivered', 'Reply', 'Meeting', 'Pipeline', 'Closed Won', 'Closed Lost'] as const;
 
 const CLOSED_CAMPAIGN_KEYWORDS = ['closed', 'won', 'lost', 'dead'];
+const ACTIVE_CAMPAIGN_KEYWORDS = ['delivered', 'reply', 'meeting', 'pipeline', 'cake sent'];
 
 export function isCampaignClosed(status: string): boolean {
   const s = status.toLowerCase();
@@ -284,9 +300,14 @@ export function isCampaignPlanned(status: string): boolean {
   return status.toLowerCase().includes('planned');
 }
 
-// Active = the cake is out in the world and the account is being worked
+// Active = the cake is out in the world and the account is being worked.
+// Deliberately an ALLOWLIST, not "anything that isn't closed/planned" - the
+// Campaigns tab also holds no-cake ICP-signal rows (see CampaignEntry) whose
+// Status is blank. Those must default to inactive, or they'd silently get
+// pulled into Today's Tier 1 cake-chase cadence.
 export function isCampaignActive(status: string): boolean {
-  return !isCampaignClosed(status) && !isCampaignPlanned(status);
+  const s = status.toLowerCase();
+  return ACTIVE_CAMPAIGN_KEYWORDS.some(k => s.includes(k));
 }
 
 // Materializes "why is this contact being tracked closely" into a plain-text
