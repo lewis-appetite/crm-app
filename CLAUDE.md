@@ -161,6 +161,33 @@ Writes go through the Apps Script web app — the API key is read-only. The key 
 
 ---
 
+## In-progress: CRM overhaul plan
+
+User asked for a larger restructure (2026-07-25 onward). Status per piece, so a fresh conversation can resume without re-deriving this:
+
+**Done:**
+- Phase 0: Activity tab created (never existed before — silently broke snoozes/streaks/draft-dedupe until fixed), R/S headers added, Priority backfilled.
+- Follow-up interval changed 14 → 7 calendar days (`FOLLOW_UP_INTERVAL_DAYS`).
+- Connections column mapping made fully header-driven (see Data Model above) — this was prerequisite work so the sheet could be freely reorganized.
+- User has since reordered the whole Connections sheet (grouped contact info, pushed Message/FU1/FU2/Last Contacted to the end) and added a **Region** column — confirmed working with zero code changes, proving the header-driven refactor.
+
+**Region column — live but unfinished:**
+- Header text is `Region`. Values in use are **`United Kingdom` / `United States`** (not `UK`/`US` as first assumed) — any sorting logic must match on the actual strings in use (and probably tolerate `UK`/`US`/`GB`/`USA` as aliases), not force the user to retag.
+- As of last check: 22 of ~3,204 contacts tagged (19 UK, 3 US), rest blank. Blank = always visible regardless of time-of-day (agreed design).
+- **Not yet built**: the actual sort logic — 06:00–21:59 UK time prioritizes UK contacts, 22:00–05:59 prioritizes US contacts. Agreed approach: sort region-appropriate contacts first with a header chip showing current mode, rest still visible/scrollable (not a hard filter).
+
+**Not yet built — the bigger restructure:**
+- **Nav**: collapse to 4 tabs (Follow-ups / New / Focus / All). Messages / Cake / Stats move into a menu (⋯) rather than being top-level tabs.
+- **Focus tab** replaces Today. Agreed design: manual shortlist (you explicitly add companies) + auto-suggest from active cake campaigns and Interested replies for one-tap adding. Needs a new "shortlist" flag, likely a Campaigns column, not yet added.
+- **Overlap rule** (agreed): if a contact is both due for follow-up and at a Focus company, show in Focus only, badged "follow-up due" — not both places.
+- **A/B testing**: user defines tests in chat (2 existing template abbreviations + a stage), stored as a new **Experiments tab** (Test ID / Name / Stage / Variant A / Variant B / Status / Started / Ended / Winner / Notes) rather than an in-app builder. Assignment via deterministic hash of `(rowIndex + testId)` — not `rowIndex % 2`, since sheet position correlates with import batch/company/region and would confound results. Follow-ups tab gets a pinned section for contacts matching an active test's stage; New tab auto-shows the assigned initial-message variant. Results must show a sample-size/confidence gate ("142/400 sent — too early to call") rather than declaring winners on small numbers.
+  - Volume reality at last check (2026-07-25): initial-message pool is huge (2,600+, can conclude in weeks). FU1 pool (~150, grows ~25/day) needs about a month for a directional read. FU2 pool (~73) needs 1–2 months — premature calls here would be noise, not signal. Re-check actual numbers before starting a test rather than trusting these.
+- **Desktop-responsive layout** — app is currently a fixed ~480px mobile shell (`.shell` in `OutreachApp.module.css`). Not started.
+
+**Open decision, asked twice, not yet answered:** whether to split `OutreachApp.tsx` (now 2000+ lines, every tab's view inline) into per-tab components before building the above, or push through and refactor later. Doing it first would make the Focus tab, nav collapse, and A/B UI meaningfully faster/safer to build.
+
+---
+
 ## Style / Conventions
 
 - No comments unless the WHY is non-obvious
