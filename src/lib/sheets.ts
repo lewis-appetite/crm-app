@@ -21,6 +21,7 @@ export interface Contact {
   phone: string;
   callBooked: string;
   priority: string;
+  region: string;
 }
 
 export interface Message {
@@ -38,61 +39,92 @@ export interface SuggestedMessage {
   repliedCount: number;
 }
 
-// Column indices for Connections sheet (0-based)
-const COL = {
-  FIRST_NAME: 0,
-  LAST_NAME: 1,
-  URL: 2,
-  COMPANY: 3,
-  POSITION: 4,
-  LIST: 5,
-  FUNCTION: 6,
-  CONNECTED_ON: 7,
-  MESSAGE: 8,
-  REPLY: 9,
-  FOLLOW_UPS: 10,
-  FOLLOW_UP_MESSAGE_1: 11,
-  FOLLOW_UP_MESSAGE_2: 12,
-  LAST_CONTACTED: 13,
-  COMMENT: 14,
-  EMAIL: 15,
-  PHONE: 16,
-  CALL_BOOKED: 17,
-  PRIORITY: 18,
+// Connections columns are resolved by HEADER TEXT, not fixed position — the
+// sheet can be reordered (columns inserted/moved) without touching any code.
+// Only the header row's wording matters; keep these strings in sync with it.
+const CONNECTIONS_FIELD_HEADERS: Record<string, string> = {
+  firstName: 'First Name',
+  lastName: 'Last Name',
+  url: 'URL',
+  company: 'Company',
+  position: 'Position',
+  list: 'List',
+  function: 'Function',
+  connectedOn: 'Connected On',
+  message: 'Message',
+  reply: 'Reply?',
+  followUps: 'Follow ups',
+  followUpMessage1: 'Follow Up Message 1',
+  followUpMessage2: 'Follow Up Message 2',
+  lastContacted: 'Last Contacted',
+  comment: 'Comment',
+  email: 'Email',
+  phone: 'Phone',
+  callBooked: 'Call booked',
+  priority: 'Priority',
+  region: 'Region',
 };
 
-export const PRIORITY_COL = 'S';
+// 0-based column index -> spreadsheet letter (A, B, ..., Z, AA, AB, ...)
+export function colLetter(index: number): string {
+  let s = '';
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
 
-// Column letters for Sheets API updates (1-based column letters)
-export const SHEET_COLS = {
-  REPLY: 'J',       // col 9 (0-based) = J
-  LAST_CONTACTED: 'N', // col 13 (0-based) = N
-};
+export interface ConnectionsColumnMap {
+  index: Record<string, number>; // field key -> 0-based column index
+  letter: Record<string, string>; // field key -> column letter, for writes
+}
+
+export function buildConnectionsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+  const index: Record<string, number> = {};
+  const letter: Record<string, string> = {};
+  const normalized = (headerRow || []).map(h => (h || '').trim().toLowerCase());
+  for (const [key, headerText] of Object.entries(CONNECTIONS_FIELD_HEADERS)) {
+    const target = headerText.toLowerCase();
+    const idx = normalized.findIndex(h => h === target);
+    if (idx !== -1) {
+      index[key] = idx;
+      letter[key] = colLetter(idx);
+    }
+  }
+  return { index, letter };
+}
 
 export function parseConnections(rows: string[][]): Contact[] {
+  const { index: col } = buildConnectionsColumnMap(rows[0] || []);
+  const get = (row: string[], key: string) => (row[col[key]] ?? '').trim();
+
   // Skip header row (index 0)
   return rows.slice(1).map((row, i) => ({
     rowIndex: i + 2, // 1-based, +1 for header
-    firstName: (row[COL.FIRST_NAME] || '').trim(),
-    lastName: (row[COL.LAST_NAME] || '').trim(),
-    fullName: `${(row[COL.FIRST_NAME] || '').trim()} ${(row[COL.LAST_NAME] || '').trim()}`.trim(),
-    url: (row[COL.URL] || '').trim(),
-    company: (row[COL.COMPANY] || '').trim(),
-    position: (row[COL.POSITION] || '').trim(),
-    list: (row[COL.LIST] || '').trim(),
-    function: (row[COL.FUNCTION] || '').trim(),
-    connectedOn: (row[COL.CONNECTED_ON] || '').trim(),
-    message: (row[COL.MESSAGE] || '').trim(),
-    reply: (row[COL.REPLY] || '').trim(),
-    followUps: (row[COL.FOLLOW_UPS] || '').trim(),
-    followUpMessage1: (row[COL.FOLLOW_UP_MESSAGE_1] || '').trim(),
-    followUpMessage2: (row[COL.FOLLOW_UP_MESSAGE_2] || '').trim(),
-    lastContacted: (row[COL.LAST_CONTACTED] || '').trim(),
-    comment: (row[COL.COMMENT] || '').trim(),
-    email: cleanContactField(row[COL.EMAIL]),
-    phone: cleanContactField(row[COL.PHONE]),
-    callBooked: (row[COL.CALL_BOOKED] || '').trim(),
-    priority: (row[COL.PRIORITY] || '').trim(),
+    firstName: get(row, 'firstName'),
+    lastName: get(row, 'lastName'),
+    fullName: `${get(row, 'firstName')} ${get(row, 'lastName')}`.trim(),
+    url: get(row, 'url'),
+    company: get(row, 'company'),
+    position: get(row, 'position'),
+    list: get(row, 'list'),
+    function: get(row, 'function'),
+    connectedOn: get(row, 'connectedOn'),
+    message: get(row, 'message'),
+    reply: get(row, 'reply'),
+    followUps: get(row, 'followUps'),
+    followUpMessage1: get(row, 'followUpMessage1'),
+    followUpMessage2: get(row, 'followUpMessage2'),
+    lastContacted: get(row, 'lastContacted'),
+    comment: get(row, 'comment'),
+    email: cleanContactField(row[col.email]),
+    phone: cleanContactField(row[col.phone]),
+    callBooked: get(row, 'callBooked'),
+    priority: get(row, 'priority'),
+    region: get(row, 'region'),
   }));
 }
 

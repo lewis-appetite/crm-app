@@ -27,6 +27,7 @@ interface SheetData {
   allContacts: Contact[];
   activity: ActivityEvent[];
   campaigns: CampaignEntry[];
+  columns: Record<string, string>;
   intervalDays: number;
   dailyNewGoal: number;
 }
@@ -498,25 +499,34 @@ export default function OutreachApp() {
     window.location.href = `tel:${c.phone}`;
   }
 
+  // Resolves a field to its live column letter — the sheet is read by header
+  // name (see buildConnectionsColumnMap), so column order never needs to
+  // match this component. An empty return means the header wasn't found,
+  // which surfaces as a visible failed write rather than silently hitting
+  // the wrong cell.
+  function col(field: string): string {
+    return data?.columns[field] ?? '';
+  }
+
   async function handleTodayDone(c: Contact) {
-    const cells: { col: string; value: string }[] = [{ col: 'N', value: todayDMY() }];
+    const cells: { col: string; value: string }[] = [{ col: col('lastContacted'), value: todayDMY() }];
     let actionType: string;
     let newFollowUpCount: number | null = null;
     let messageField: 'message' | 'followUpMessage1' | 'followUpMessage2' | null = null;
 
     if (!c.message) {
-      cells.push({ col: 'I', value: 'One-off' });
+      cells.push({ col: col('message'), value: 'One-off' });
       messageField = 'message';
       actionType = 'new';
     } else {
       newFollowUpCount = (parseInt(c.followUps) || 0) + 1;
-      cells.push({ col: 'K', value: String(newFollowUpCount) });
+      cells.push({ col: col('followUps'), value: String(newFollowUpCount) });
       if (!c.followUpMessage1) {
-        cells.push({ col: 'L', value: 'One-off' });
+        cells.push({ col: col('followUpMessage1'), value: 'One-off' });
         messageField = 'followUpMessage1';
         actionType = 'followup1';
       } else if (!c.followUpMessage2) {
-        cells.push({ col: 'M', value: 'One-off' });
+        cells.push({ col: col('followUpMessage2'), value: 'One-off' });
         messageField = 'followUpMessage2';
         actionType = 'followup2';
       } else {
@@ -581,7 +591,7 @@ export default function OutreachApp() {
 
   async function handleReplied(c: Contact, value: 'Interested' | 'Not interested') {
     const priority = computePriorityLabel({ ...c, reply: value }, companyIsActive(c.company));
-    await updateSheet(c.rowIndex, [{ col: 'J', value }, { col: 'S', value: priority }], {
+    await updateSheet(c.rowIndex, [{ col: col('reply'), value }, { col: col('priority'), value: priority }], {
       action: 'reply',
       detail: value,
       name: c.fullName,
@@ -600,7 +610,7 @@ export default function OutreachApp() {
   }
 
   async function handleMeetingBooked(c: Contact) {
-    await updateSheet(c.rowIndex, [{ col: 'R', value: todayDMY() }], {
+    await updateSheet(c.rowIndex, [{ col: col('callBooked'), value: todayDMY() }], {
       action: 'callbooked',
       name: c.fullName,
       company: c.company,
@@ -654,7 +664,7 @@ export default function OutreachApp() {
 
   async function handleSaveComment(c: Contact) {
     const value = commentDrafts[c.rowIndex] ?? c.comment;
-    await updateSheet(c.rowIndex, [{ col: 'O', value }]);
+    await updateSheet(c.rowIndex, [{ col: col('comment'), value }]);
     setData(prev => {
       if (!prev) return prev;
       const upd = <T extends Contact>(x: T) => (x.rowIndex !== c.rowIndex ? x : { ...x, comment: value });
@@ -678,13 +688,13 @@ export default function OutreachApp() {
       const actionType = tab === 'new' ? 'new' : `followup${followUpStage}`;
 
       if (templateUsed) {
-        if (tab === 'new') cells.push({ col: 'I', value: templateUsed });
-        else if (followUpStage === 1) cells.push({ col: 'L', value: templateUsed });
-        else if (followUpStage === 2) cells.push({ col: 'M', value: templateUsed });
+        if (tab === 'new') cells.push({ col: col('message'), value: templateUsed });
+        else if (followUpStage === 1) cells.push({ col: col('followUpMessage1'), value: templateUsed });
+        else if (followUpStage === 2) cells.push({ col: col('followUpMessage2'), value: templateUsed });
       }
       const newFollowUpCount = tab === 'followup' ? (parseInt(c.followUps) || 0) + 1 : null;
-      if (newFollowUpCount !== null) cells.push({ col: 'K', value: String(newFollowUpCount) });
-      cells.push({ col: 'N', value: todayDMY() });
+      if (newFollowUpCount !== null) cells.push({ col: col('followUps'), value: String(newFollowUpCount) });
+      cells.push({ col: col('lastContacted'), value: todayDMY() });
 
       await updateSheet(c.rowIndex, cells, {
         action: actionType,
@@ -723,7 +733,7 @@ export default function OutreachApp() {
       setCombo(x => x + 1);
     } else {
       const reason = deadReason || 'Dead lead';
-      cells.push({ col: 'J', value: reason });
+      cells.push({ col: col('reply'), value: reason });
       await updateSheet(c.rowIndex, cells, {
         action: 'reply',
         detail: reason,
@@ -792,13 +802,8 @@ export default function OutreachApp() {
     if (editingRowIndex === null || saveLoading || !data) return;
     setSaveLoading(true);
 
-    const fieldCols: Record<string, string> = {
-      list: 'F', function: 'G', message: 'I', reply: 'J',
-      followUpMessage1: 'L', followUpMessage2: 'M', lastContacted: 'N', comment: 'O',
-    };
-
     const cells = Object.entries(editValues).map(([field, value]) => ({
-      col: fieldCols[field],
+      col: col(field),
       value,
     }));
 
@@ -814,7 +819,7 @@ export default function OutreachApp() {
     let newPriority: string | null = null;
     if (replyChanged && prevContact) {
       newPriority = computePriorityLabel({ ...prevContact, reply: editValues.reply }, companyIsActive(prevContact.company));
-      cells.push({ col: 'S', value: newPriority });
+      cells.push({ col: col('priority'), value: newPriority });
     }
 
     await updateSheet(

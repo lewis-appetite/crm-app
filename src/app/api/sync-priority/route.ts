@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseConnections, parseCampaigns, normalizeCompany, isCampaignActive, computePriorityLabel, PRIORITY_COL } from '@/lib/sheets';
+import { parseConnections, parseCampaigns, normalizeCompany, isCampaignActive, computePriorityLabel, buildConnectionsColumnMap } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 import { postToAppsScript } from '@/lib/appsScript';
 
-// Recomputes and writes the Priority column (S) for every contact at a given
+// Recomputes and writes the Priority column for every contact at a given
 // company, based on the company's current campaign stage. Called after a
 // company's stage changes, since that can flip Priority for many rows at
 // once. Only rows whose value actually changed are written.
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
     ]);
     const contacts = parseConnections(connectionRows);
     const campaigns = parseCampaigns(campaignRows);
+    const priorityCol = buildConnectionsColumnMap(connectionRows[0] || []).letter.priority;
 
     const key = normalizeCompany(company);
     const campaign = campaigns.find(c => normalizeCompany(c.company) === key);
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
       .filter(c => normalizeCompany(c.company) === key)
       .map(c => ({ rowIndex: c.rowIndex, label: computePriorityLabel(c, isActive), current: c.priority }))
       .filter(x => x.label !== x.current)
-      .map(x => ({ rowIndex: x.rowIndex, cells: [{ col: PRIORITY_COL, value: x.label }] }));
+      .map(x => ({ rowIndex: x.rowIndex, cells: [{ col: priorityCol, value: x.label }] }));
 
     if (batch.length > 0) {
       await postToAppsScript({ batch });

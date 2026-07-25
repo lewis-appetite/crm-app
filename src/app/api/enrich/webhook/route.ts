@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { postToAppsScript } from '@/lib/appsScript';
 import { draftEmailForContact } from '@/lib/draftEmail';
+import { resolveConnectionsColumn } from '@/lib/sheetsApi';
 
 export const maxDuration = 60;
 
@@ -41,7 +42,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    await postToAppsScript({ rowIndex, cells: [{ col: 'P', value: email }] });
+    const emailCol = await resolveConnectionsColumn('email');
+    await postToAppsScript({ rowIndex, cells: [{ col: emailCol, value: email }] });
     const draftResult = await draftEmailForContact(rowIndex, true);
     if (!draftResult.ok) {
       console.error('FullEnrich webhook: auto-draft failed', draftResult.error);

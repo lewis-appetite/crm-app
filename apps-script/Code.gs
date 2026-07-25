@@ -178,6 +178,42 @@ function testGmailSearch() {
   });
 }
 
+// Header-driven column resolution for the Connections tab, mirroring
+// buildConnectionsColumnMap in src/lib/sheets.ts. Every maintenance function
+// below locates columns by header TEXT, never by fixed letter/position, so
+// the sheet can be reordered without these silently reading/writing the
+// wrong cells next time they're run.
+function connectionsHeaderIndex_(headerText) {
+  var conn = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Connections');
+  var headers = conn.getRange(1, 1, 1, conn.getLastColumn()).getValues()[0];
+  var target = headerText.trim().toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim().toLowerCase() === target) return i + 1; // 1-based
+  }
+  return null;
+}
+
+// Same, but appends a new column with this header if it isn't found yet.
+function connectionsHeaderIndexOrAppend_(headerText) {
+  var idx = connectionsHeaderIndex_(headerText);
+  if (idx) return idx;
+  var conn = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Connections');
+  var newCol = conn.getLastColumn() + 1;
+  conn.getRange(1, newCol).setValue(headerText);
+  return newCol;
+}
+
+function colLetterFromIndex_(index1Based) {
+  var s = '';
+  var n = index1Based;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 // PHASE 0 SETUP — run once from the editor (Run > setupPhase0), then check the log.
 // Creates the Activity tab, which never existed: doPost silently no-ops its log
 // writes when getSheetByName('Activity') returns null, so snoozes, streak history
@@ -202,15 +238,15 @@ function setupPhase0() {
   }
   activity.getRange('A2:A').setNumberFormat('dd/mm/yyyy');
 
-  if (!String(conn.getRange('R1').getValue()).trim()) {
-    conn.getRange('R1').setValue('Call booked');
-    report.push('Added R1 "Call booked" header.');
+  var callBookedCol = connectionsHeaderIndexOrAppend_('Call booked');
+  report.push('Call booked column is at ' + colLetterFromIndex_(callBookedCol) + '.');
+  var priorityColIdx = connectionsHeaderIndexOrAppend_('Priority');
+  report.push('Priority column is at ' + colLetterFromIndex_(priorityColIdx) + '.');
+
+  var setupLastRow = conn.getLastRow();
+  if (setupLastRow > 1) {
+    conn.getRange(2, callBookedCol, setupLastRow - 1, 1).setNumberFormat('dd/mm/yyyy');
   }
-  if (!String(conn.getRange('S1').getValue()).trim()) {
-    conn.getRange('S1').setValue('Priority');
-    report.push('Added S1 "Priority" header.');
-  }
-  conn.getRange('R2:R').setNumberFormat('dd/mm/yyyy');
 
   backfillPriorityColumn();
   report.push('Priority column backfilled.');
@@ -233,10 +269,14 @@ function setupDataHygiene() {
   var conn = ss.getSheetByName('Connections');
   var messages = ss.getSheetByName('Messages');
 
-  // 1. Call booked date column (appended at R — never insert mid-sheet, the app maps columns by position)
-  if (!String(conn.getRange('R1').getValue()).trim()) {
-    conn.getRange('R1').setValue('Call booked');
-  }
+  // 1. Call booked date column (created wherever it is, or appended new — never assumes a fixed letter)
+  var callBookedCol = connectionsHeaderIndexOrAppend_('Call booked');
+
+  var messageCol = connectionsHeaderIndex_('Message');
+  var fu1Col = connectionsHeaderIndex_('Follow Up Message 1');
+  var fu2Col = connectionsHeaderIndex_('Follow Up Message 2');
+  var connectedOnCol = connectionsHeaderIndex_('Connected On');
+  var lastContactedCol = connectionsHeaderIndex_('Last Contacted');
 
   // 2. Template dropdowns on Message / Follow Up 1 / Follow Up 2, fed live from the Messages tab.
   //    WARNING mode, not reject — a strict reject would make the web app's writes throw.
@@ -244,14 +284,19 @@ function setupDataHygiene() {
     .requireValueInRange(messages.getRange('C2:C'), true)
     .setAllowInvalid(true)
     .build();
-  ['I', 'L', 'M'].forEach(function (col) {
-    conn.getRange(col + '2:' + col).setDataValidation(rule);
+  [messageCol, fu1Col, fu2Col].forEach(function (colIdx) {
+    if (!colIdx) return;
+    var letter = colLetterFromIndex_(colIdx);
+    conn.getRange(letter + '2:' + letter).setDataValidation(rule);
   });
 
   // 3. Date formats — display MUST stay DD/MM/YYYY (the app parses what the sheet displays)
-  conn.getRange('H2:H').setNumberFormat('dd/mm/yyyy');
-  conn.getRange('N2:N').setNumberFormat('dd/mm/yyyy');
-  conn.getRange('R2:R').setNumberFormat('dd/mm/yyyy');
+  var lastRow = conn.getLastRow();
+  if (lastRow > 1) {
+    if (connectedOnCol) conn.getRange(2, connectedOnCol, lastRow - 1, 1).setNumberFormat('dd/mm/yyyy');
+    if (lastContactedCol) conn.getRange(2, lastContactedCol, lastRow - 1, 1).setNumberFormat('dd/mm/yyyy');
+    if (callBookedCol) conn.getRange(2, callBookedCol, lastRow - 1, 1).setNumberFormat('dd/mm/yyyy');
+  }
   var activity = ss.getSheetByName('Activity');
   if (activity) activity.getRange('A2:A').setNumberFormat('dd/mm/yyyy');
   var campaigns = ss.getSheetByName('Campaigns');
@@ -265,10 +310,11 @@ function setupDataHygiene() {
     if (abbr) canonicalByNorm[normAbbr_(abbr)] = abbr;
   });
   var fixes = 0;
-  [9, 12, 13].forEach(function (colNum) { // I, L, M
+  [messageCol, fu1Col, fu2Col].forEach(function (colIdx) {
+    if (!colIdx) return;
     var numRows = conn.getLastRow() - 1;
     if (numRows < 1) return;
-    var range = conn.getRange(2, colNum, numRows, 1);
+    var range = conn.getRange(2, colIdx, numRows, 1);
     var values = range.getValues();
     var changed = false;
     values.forEach(function (row) {
@@ -286,9 +332,12 @@ function setupDataHygiene() {
 
   // 5. Known orphan: row 153 used a template name that matches nothing in Messages.
   //    Kaz Hind @ Cloudflare is Account Management (sales-side), so credit the Acquisition variant.
-  if (String(conn.getRange('I153').getValue()).trim() === 'Icing up the wrong cake') {
-    conn.getRange('I153').setValue('Icing up the wrong cake Acquisition');
-    fixes++;
+  if (messageCol) {
+    var orphanCell = conn.getRange(153, messageCol);
+    if (String(orphanCell.getValue()).trim() === 'Icing up the wrong cake') {
+      orphanCell.setValue('Icing up the wrong cake Acquisition');
+      fixes++;
+    }
   }
 
   Logger.log('Done. ' + fixes + ' template values canonicalized.');
@@ -307,8 +356,12 @@ function backfillPriorityColumn() {
   var conn = ss.getSheetByName('Connections');
   var camp = ss.getSheetByName('Campaigns');
 
-  if (!String(conn.getRange('S1').getValue()).trim()) {
-    conn.getRange('S1').setValue('Priority');
+  var priorityCol = connectionsHeaderIndexOrAppend_('Priority');
+  var companyCol = connectionsHeaderIndex_('Company');
+  var replyCol = connectionsHeaderIndex_('Reply?');
+  if (!companyCol || !replyCol) {
+    Logger.log('backfillPriorityColumn: could not find Company/Reply? headers, aborting.');
+    return;
   }
 
   var activeCompanies = {};
@@ -326,11 +379,12 @@ function backfillPriorityColumn() {
   var numRows = conn.getLastRow() - 1;
   if (numRows < 1) return;
 
-  var data = conn.getRange(2, 1, numRows, 10).getValues(); // A:J — need Company (D) and Reply (J)
+  var companyValues = conn.getRange(2, companyCol, numRows, 1).getValues();
+  var replyValues = conn.getRange(2, replyCol, numRows, 1).getValues();
   var WORTHY = ['interested', 'yes', ''];
-  var priorities = data.map(function (row) {
-    var company = String(row[3] || '').trim();
-    var reply = String(row[9] || '').trim().toLowerCase();
+  var priorities = companyValues.map(function (row, i) {
+    var company = String(row[0] || '').trim();
+    var reply = String(replyValues[i][0] || '').trim().toLowerCase();
     var dead = WORTHY.indexOf(reply) === -1;
     if (dead) return [''];
     if (company && activeCompanies[normAbbr_(company)]) return ['\u{1F382} Cake'];
@@ -338,7 +392,7 @@ function backfillPriorityColumn() {
     return [''];
   });
 
-  conn.getRange(2, 19, numRows, 1).setValues(priorities); // S
+  conn.getRange(2, priorityCol, numRows, 1).setValues(priorities);
   Logger.log('Backfilled Priority for ' + numRows + ' rows.');
 }
 

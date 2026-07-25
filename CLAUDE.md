@@ -16,29 +16,30 @@ A personal LinkedIn outreach CRM. A Next.js 14 app that uses **Google Sheets as 
 Three Google Sheets tabs:
 
 ### Connections tab (one row per contact)
-| Col | Letter | Field |
-|-----|--------|-------|
-| 0 | A | First Name |
-| 1 | B | Last Name |
-| 2 | C | LinkedIn URL |
-| 3 | D | Company |
-| 4 | E | Position |
-| 5 | F | List |
-| 6 | G | Function |
-| 7 | H | Connected On |
-| 8 | I | Message (abbreviation of initial message sent) |
-| 9 | J | Reply (status: "Interested", "Dead lead", "Not interested", etc.) |
-| 10 | K | Follow Ups (count) |
-| 11 | L | Follow Up Message 1 (abbreviation of follow-up template used) |
-| 12 | M | Follow Up Message 2 (abbreviation of second follow-up template used) |
-| 13 | N | Last Contacted (date, DD/MM/YYYY) |
-| 14 | O | Comment |
-| 15 | P | Email |
-| 16 | Q | Phone |
-| 17 | R | Call booked (date, DD/MM/YYYY — set by the Today tab's "Meeting booked" action; graduates the contact out of both Today queues) |
-| 18 | S | Priority — app-written label ("🎂 Cake" / "🔥 Interested" / blank) so the reason a contact is being tracked closely is visible directly in the sheet, not just in Today. See `computePriorityLabel` |
+| Field | Header text |
+|-------|-------------|
+| First Name | `First Name` |
+| Last Name | `Last Name` |
+| URL | `URL` |
+| Company | `Company` |
+| Position | `Position` |
+| List | `List` |
+| Function | `Function` |
+| Connected On | `Connected On` |
+| Message (abbreviation of initial message sent) | `Message` |
+| Reply (status: "Interested", "Dead lead", "Not interested", etc.) | `Reply?` |
+| Follow Ups (count) | `Follow ups` |
+| Follow Up Message 1 | `Follow Up Message 1` |
+| Follow Up Message 2 | `Follow Up Message 2` |
+| Last Contacted (date, DD/MM/YYYY) | `Last Contacted` |
+| Comment | `Comment` |
+| Email | `Email` |
+| Phone | `Phone` |
+| Call booked (date — set by the Today tab's "Meeting booked" action; graduates the contact out of both Today queues) | `Call booked` |
+| Priority — app-written label ("🎂 Cake" / "🔥 Interested" / blank), see `computePriorityLabel` | `Priority` |
+| Region (`UK`/`US`; blank = always visible regardless of time-of-day sorting) | `Region` |
 
-Columns are mapped by position in `src/lib/sheets.ts` (COL) — new columns must be APPENDED (S, T, …), never inserted mid-sheet. All date columns display DD/MM/YYYY; the app parses displayed values, so never change that display format. Cols I/L/M have sheet-side dropdown validation fed from Messages!C (warning mode, not reject — reject would break Apps Script writes).
+**Columns are resolved by header text, not position** (`buildConnectionsColumnMap` in `src/lib/sheets.ts`). The sheet can be reordered, and columns inserted anywhere, without touching any code — the app reads row 1 on every load and builds a field→letter map, which `/api/sheet` returns to the client for writes. Server routes that write a single column without loading the whole sheet (`/api/enrich`, `/api/enrich/webhook`, `/api/sync-priority`) resolve it via `resolveConnectionsColumn()` / `buildConnectionsColumnMap()` at request time instead. The Apps Script mirrors this with its own `connectionsHeaderIndex_()` / `connectionsHeaderIndexOrAppend_()` helpers — `setupPhase0`, `setupDataHygiene`, and `backfillPriorityColumn` all locate columns by header name rather than fixed letters. Only requirement: the header **text** in row 1 must match what's listed above — rename a header and update `CONNECTIONS_FIELD_HEADERS` in `sheets.ts` to match. All date columns display DD/MM/YYYY; the app parses displayed values, so never change that display format. Message/Follow Up 1/Follow Up 2 have sheet-side dropdown validation fed from Messages!C (warning mode, not reject — reject would break Apps Script writes).
 
 ### Messages tab (one row per template)
 | Col | Field |

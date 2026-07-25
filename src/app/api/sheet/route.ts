@@ -8,6 +8,7 @@ import {
   getNewContactsQueue,
   getTodayQueue,
   getActiveSnoozes,
+  buildConnectionsColumnMap,
 } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 
@@ -26,6 +27,7 @@ export async function GET() {
     ]);
 
     const contacts = parseConnections(connectionRows);
+    const columns = buildConnectionsColumnMap(connectionRows[0] || []).letter;
     const messages = parseMessages(messageRows);
     const activity = parseActivity(activityRows);
     const campaigns = parseCampaigns(campaignRows);
@@ -43,6 +45,7 @@ export async function GET() {
       allContacts: contacts,
       activity,
       campaigns,
+      columns,
       intervalDays: INTERVAL,
       dailyNewGoal: DAILY_NEW_GOAL,
     });

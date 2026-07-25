@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { postToAppsScript } from '@/lib/appsScript';
 import { draftEmailForContact } from '@/lib/draftEmail';
+import { resolveConnectionsColumn } from '@/lib/sheetsApi';
 
 export const maxDuration = 60;
 
@@ -91,7 +92,8 @@ export async function GET(req: NextRequest) {
 
     if (status === 'FINISHED' && email && rowIndexParam) {
       const rowIndex = parseInt(rowIndexParam);
-      await postToAppsScript({ rowIndex, cells: [{ col: 'P', value: email }] });
+      const emailCol = await resolveConnectionsColumn('email');
+      await postToAppsScript({ rowIndex, cells: [{ col: emailCol, value: email }] });
       const draftResult = await draftEmailForContact(rowIndex, true);
       return NextResponse.json({
         status,
