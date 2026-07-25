@@ -11,7 +11,7 @@ import {
 } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 
-const INTERVAL = parseInt(process.env.FOLLOW_UP_INTERVAL_DAYS || '14');
+const INTERVAL = parseInt(process.env.FOLLOW_UP_INTERVAL_DAYS || '7');
 const DAILY_NEW_GOAL = parseInt(process.env.DAILY_NEW_GOAL || '25');
 const CAKE_TOUCH_DAYS = parseInt(process.env.CAKE_TOUCH_DAYS || '3');
 const HOT_TOUCH_DAYS = parseInt(process.env.HOT_TOUCH_DAYS || '2');
