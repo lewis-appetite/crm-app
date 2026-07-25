@@ -178,6 +178,54 @@ function testGmailSearch() {
   });
 }
 
+// PHASE 0 SETUP — run once from the editor (Run > setupPhase0), then check the log.
+// Creates the Activity tab, which never existed: doPost silently no-ops its log
+// writes when getSheetByName('Activity') returns null, so snoozes, streak history
+// and draft dedupe have all been inert. Also adds the R/S headers and backfills
+// the Priority column. Safe to re-run; every step is idempotent.
+function setupPhase0() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var conn = ss.getSheetByName('Connections');
+  var report = [];
+
+  var activity = ss.getSheetByName('Activity');
+  if (!activity) {
+    activity = ss.insertSheet('Activity');
+    report.push('Created Activity tab.');
+  } else {
+    report.push('Activity tab already existed.');
+  }
+  if (!String(activity.getRange('A1').getValue()).trim()) {
+    activity.getRange('A1:G1').setValues([['Date', 'Row', 'Name', 'Company', 'Action', 'Template', 'Detail']]);
+    activity.setFrozenRows(1);
+    report.push('Added Activity headers.');
+  }
+  activity.getRange('A2:A').setNumberFormat('dd/mm/yyyy');
+
+  if (!String(conn.getRange('R1').getValue()).trim()) {
+    conn.getRange('R1').setValue('Call booked');
+    report.push('Added R1 "Call booked" header.');
+  }
+  if (!String(conn.getRange('S1').getValue()).trim()) {
+    conn.getRange('S1').setValue('Priority');
+    report.push('Added S1 "Priority" header.');
+  }
+  conn.getRange('R2:R').setNumberFormat('dd/mm/yyyy');
+
+  backfillPriorityColumn();
+  report.push('Priority column backfilled.');
+
+  // Prove the log path works end to end rather than assuming it — this is
+  // exactly the write that was failing silently before.
+  activity.appendRow([
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+    '', 'SETUP TEST', '', 'setup', '', 'safe to delete this row',
+  ]);
+  report.push('Wrote a test row to Activity — delete it once you have seen it.');
+
+  Logger.log(report.join('\n'));
+}
+
 // One-time data hygiene setup — run manually from the editor (Run > setupDataHygiene).
 // Safe to re-run; every step is idempotent. Does NOT require redeploying the web app.
 function setupDataHygiene() {
