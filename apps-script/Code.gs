@@ -114,6 +114,12 @@ function doPost(e) {
     }
   }
 
+  // Without this, SpreadsheetApp writes can still be buffered when this
+  // response goes out - a client that immediately re-reads via the separate
+  // read-only Sheets API (e.g. Focus's silentRefresh() right after adding a
+  // company) can then race ahead of its own write and see stale data.
+  SpreadsheetApp.flush();
+
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError }))
     .setMimeType(ContentService.MimeType.JSON);

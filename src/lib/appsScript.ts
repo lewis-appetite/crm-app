@@ -14,7 +14,7 @@ export interface AppsScriptPayload {
     template: string;
     detail: string;
   };
-  campaign?: { company: string; status?: string; notes?: string };
+  campaign?: { company: string; status?: string; notes?: string; focus?: boolean };
   draft?: { to: string; subject: string; body: string; threadId?: string };
   gmailSearch?: { targetEmail: string; companyDomain?: string };
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
