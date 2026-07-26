@@ -1163,6 +1163,35 @@ export default function OutreachApp() {
                       🎂
                     </a>
                   )}
+                  {contact!.email ? (
+                    <button
+                      className={`${styles.todayChannelBtn} ${styles.emailReadyBtn}`}
+                      onClick={() => handleDraftEmail(contact!)}
+                      disabled={!!emailBusy[contact!.rowIndex]}
+                      aria-label="Draft email with AI"
+                      title="AI-draft an email into your Gmail drafts"
+                    >
+                      {emailBusy[contact!.rowIndex] === 'drafting' ? (
+                        <span className={styles.miniSpinner} />
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      className={styles.todayChannelBtn}
+                      onClick={() => handleFindEmail(contact!)}
+                      disabled={!!emailBusy[contact!.rowIndex]}
+                      aria-label="Find email with FullEnrich"
+                      title="Find this contact's email (uses FullEnrich credits)"
+                    >
+                      {emailBusy[contact!.rowIndex] === 'enriching' ? (
+                        <span className={styles.miniSpinner} />
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="14" height="12" rx="2"/><path d="m16 7-7 4-7-4"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="m21 20 2 2"/></svg>
+                      )}
+                    </button>
+                  )}
                   <a
                     className={`${styles.liBtn} ${!contact!.url ? styles.disabled : ''}`}
                     onClick={() => contact!.url && handleLinkedIn(contact!)}
