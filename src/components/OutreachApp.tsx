@@ -3,10 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier, CampaignEntry,
-  suggestMessage, daysAgo, parseDate, todayDMY, isCampaignClosed, isCampaignActive, computePriorityLabel,
-  getMessageStats, MessageStats, POSITIVE_REPLIES, normAbbr,
+  suggestMessage, daysAgo, parseDate, todayDMY, isCampaignActive, computePriorityLabel,
+  getMessageStats, normAbbr,
   getStats, Stats, CAMPAIGN_STAGES,
+  getRegionMode, regionSortRank,
 } from '@/lib/sheets';
+import CakeTab from './tabs/CakeTab';
+import StatsTab from './tabs/StatsTab';
+import MessagesTab from './tabs/MessagesTab';
+import ConnectionsTab from './tabs/ConnectionsTab';
+import FocusTab from './tabs/FocusTab';
 
 interface CakeImage {
   name: string;
@@ -22,7 +28,8 @@ import styles from './OutreachApp.module.css';
 interface SheetData {
   followUps: Contact[];
   newContacts: Contact[];
-  today: CompanyGroup[];
+  focus: CompanyGroup[];
+  focusSuggestions: string[];
   messages: Message[];
   allContacts: Contact[];
   activity: ActivityEvent[];
@@ -32,18 +39,14 @@ interface SheetData {
   dailyNewGoal: number;
 }
 
-type Tab = 'followup' | 'new' | 'today' | 'messages' | 'cake' | 'connections' | 'stats';
+type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats';
+const MORE_TABS: { tab: Tab; label: string }[] = [
+  { tab: 'messages', label: 'Messages' },
+  { tab: 'cake', label: 'Cake' },
+  { tab: 'stats', label: 'Stats' },
+];
 
-const TIER_LABELS: Record<Tier, string> = {
-  1: 'Cake campaign',
-  2: 'Interested reply',
-};
-const TIER_ICONS: Record<Tier, string> = { 1: '\u{1F382}', 2: '\u{1F525}' };
-const TIER_STYLE: Record<Tier, string> = { 1: 'tierCake', 2: 'tierWarm' };
 type NewSort = 'recent' | 'oldest' | 'az';
-type MessagesView = 'cards' | 'table';
-
-const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Wrong location', 'Wrong role', 'Not interested', 'Blocked', 'Gone cold'];
 
 interface UpdateBody {
   rowIndex?: number;
@@ -57,7 +60,7 @@ interface UpdateBody {
     template: string;
     detail: string;
   };
-  campaign?: { company: string; status?: string; notes?: string };
+  campaign?: { company: string; status?: string; notes?: string; focus?: boolean };
 }
 
 async function postUpdate(payload: UpdateBody): Promise<boolean> {
@@ -109,13 +112,6 @@ export default function OutreachApp() {
   const [tab, setTab] = useState<Tab>('followup');
   const [index, setIndex] = useState(0);
 
-  // Connections tab filters
-  const [search, setSearch] = useState('');
-  const [filterList, setFilterList] = useState('');
-  const [filterFunction, setFilterFunction] = useState('');
-  const [filterReply, setFilterReply] = useState('');
-
-  const [messagesView, setMessagesView] = useState<MessagesView>('cards');
   const [cakeImages, setCakeImages] = useState<CakeImage[]>([]);
 
   // Gamification
@@ -139,6 +135,7 @@ export default function OutreachApp() {
   const [tierFilter, setTierFilter] = useState<Tier | null>(null);
   const [activeMenu, setActiveMenu] = useState<{ rowIndex: number; type: 'snooze' | 'replied' } | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
   const [companyNotesDrafts, setCompanyNotesDrafts] = useState<Record<string, string>>({});
@@ -154,10 +151,6 @@ export default function OutreachApp() {
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [copied, setCopied] = useState(false);
-  const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
-  const [copiedCake, setCopiedCake] = useState(false);
-  const cakeCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,9 +236,9 @@ export default function OutreachApp() {
   }, [toast]);
 
   useEffect(() => {
-    if (seededExpand.current || !data?.today || data.today.length === 0) return;
+    if (seededExpand.current || !data?.focus || data.focus.length === 0) return;
     seededExpand.current = true;
-    setExpandedCompanies(new Set([data.today[0].company]));
+    setExpandedCompanies(new Set([data.focus[0].company]));
   }, [data]);
 
   // Build cake image lookup map
@@ -261,6 +254,10 @@ export default function OutreachApp() {
     return getCake(company)?.viewLink ?? null;
   }
 
+  // 06:00-21:59 favors UK contacts, 22:00-05:59 favors US contacts - recomputed
+  // each render since it only depends on wall-clock time, not fetched data
+  const regionMode = getRegionMode();
+
   // Sorted + filtered new contacts queue
   const sortedNewContacts = (() => {
     if (!data) return [];
@@ -275,7 +272,11 @@ export default function OutreachApp() {
         const aHasCake = !!getCakeLink(a.company);
         const bHasCake = !!getCakeLink(b.company);
         if (aHasCake !== bHasCake) return aHasCake ? -1 : 1;
-        // Secondary: user-chosen sort
+        // Secondary: region matching the current time-of-day window
+        const ra = regionSortRank(a.region, regionMode);
+        const rb = regionSortRank(b.region, regionMode);
+        if (ra !== rb) return ra - rb;
+        // Tertiary: user-chosen sort
         if (newSort === 'az') return a.company.localeCompare(b.company);
         const da = parseDate(a.connectedOn);
         const db = parseDate(b.connectedOn);
@@ -286,8 +287,15 @@ export default function OutreachApp() {
       });
   })();
 
+  // Follow-ups arrive pre-sorted by cadence priority (server-side); a stable
+  // sort layers region preference on top without disturbing that ordering
+  // for contacts in the same region bucket
+  const sortedFollowUps = data
+    ? [...data.followUps].sort((a, b) => regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode))
+    : [];
+
   const queue = data
-    ? (tab === 'followup' ? data.followUps : sortedNewContacts).filter(
+    ? (tab === 'followup' ? sortedFollowUps : sortedNewContacts).filter(
         c => !dismissed.has(c.rowIndex)
       )
     : [];
@@ -337,10 +345,10 @@ export default function OutreachApp() {
       : m.messageType === 'Follow Up'
   ) ?? [];
 
-  const todayGroups: CompanyGroup[] = (data?.today ?? [])
+  const focusGroups: CompanyGroup[] = (data?.focus ?? [])
     .map(g => ({ ...g, contacts: g.contacts.filter(c => !dismissed.has(c.rowIndex)) }))
     .filter(g => g.contacts.length > 0);
-  const todayContactCount = todayGroups.reduce((n, g) => n + g.contacts.length, 0);
+  const focusContactCount = focusGroups.reduce((n, g) => n + g.contacts.length, 0);
 
   async function updateSheet(
     rowIndex: number,
@@ -366,7 +374,7 @@ export default function OutreachApp() {
     if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
 
-  async function updateCampaign(company: string, updates: { status?: string; notes?: string }) {
+  async function updateCampaign(company: string, updates: { status?: string; notes?: string; focus?: boolean }) {
     const payload: UpdateBody = { campaign: { company, ...updates } };
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
@@ -397,7 +405,7 @@ export default function OutreachApp() {
       return {
         ...prev,
         allContacts: prev.allContacts.map(upd),
-        today: prev.today.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
+        focus: prev.focus.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
       };
     });
   }
@@ -508,7 +516,7 @@ export default function OutreachApp() {
     return data?.columns[field] ?? '';
   }
 
-  async function handleTodayDone(c: Contact) {
+  async function handleFocusDone(c: Contact) {
     const cells: { col: string; value: string }[] = [{ col: col('lastContacted'), value: todayDMY() }];
     let actionType: string;
     let newFollowUpCount: number | null = null;
@@ -625,7 +633,7 @@ export default function OutreachApp() {
     setCelebration({ title: '\u{1F4C5} Meeting booked!', detail: `${c.fullName} at ${c.company} — nice work` });
   }
 
-  async function handleAddCompany(companyArg?: string) {
+  async function handleAddToFocus(companyArg?: string) {
     const company = (companyArg ?? newCompanyName).trim();
     if (!company) return;
     setNewCompanyName('');
@@ -633,14 +641,24 @@ export default function OutreachApp() {
       if (!prev) return prev;
       const existing = prev.campaigns.find(c => normAbbr(c.company) === normAbbr(company));
       const campaigns = existing
-        ? prev.campaigns.map(c => (c === existing ? { ...c, status: 'Planned' } : c))
-        : [...prev.campaigns, { company, status: 'Planned', cakeSentDate: '', notes: '', industry: '', companySize: '', fundingStage: '', region: '', icpSignal: '' }];
+        ? prev.campaigns.map(c => (c === existing ? { ...c, focus: true } : c))
+        : [...prev.campaigns, { company, status: '', cakeSentDate: '', notes: '', industry: '', companySize: '', fundingStage: '', region: '', icpFit: '', focus: true }];
       return { ...prev, campaigns };
     });
-    await updateCampaign(company, { status: 'Planned' });
+    await updateCampaign(company, { focus: true });
     await syncPriority(company);
-    // the watched-company change affects Today's tier grouping, which is
-    // computed server-side — refetch so the new company's contacts appear
+    // the shortlist change affects Focus's grouping, which is computed
+    // server-side — refetch so the new company's contacts appear
+    await silentRefresh();
+  }
+
+  async function handleRemoveFromFocus(company: string) {
+    setData(prev => {
+      if (!prev) return prev;
+      return { ...prev, campaigns: prev.campaigns.map(c => (c.company === company ? { ...c, focus: false } : c)) };
+    });
+    await updateCampaign(company, { focus: false });
+    await syncPriority(company);
     await silentRefresh();
   }
 
@@ -671,7 +689,7 @@ export default function OutreachApp() {
       return {
         ...prev,
         allContacts: prev.allContacts.map(upd),
-        today: prev.today.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
+        focus: prev.focus.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
       };
     });
   }
@@ -766,14 +784,6 @@ export default function OutreachApp() {
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
       copyTimeout.current = setTimeout(() => setCopied(false), 2500);
       if (url) window.open(url, '_blank');
-    });
-  }
-
-  function handleCopyMessage(text: string, abbr: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedMsg(abbr);
-      if (msgCopyTimeout.current) clearTimeout(msgCopyTimeout.current);
-      msgCopyTimeout.current = setTimeout(() => setCopiedMsg(null), 2000);
     });
   }
 
@@ -926,6 +936,9 @@ export default function OutreachApp() {
             <GoalRing value={todayNew} max={dailyNewGoal} label="New today" />
             <GoalRing value={stats.todayFollowUps} max={followUpsDueTotal} label="Follow-ups" />
             <div className={styles.goalBarRight}>
+              <span className={styles.regionChip} title="Which region's contacts are sorted first right now">
+                {regionMode === 'uk' ? '🇬🇧 UK hours' : '🇺🇸 US hours'}
+              </span>
               {combo >= 2 && <span className={styles.comboChip}>⚡ {combo}</span>}
               <span className={`${styles.streakChip} ${stats.streak === 0 ? styles.streakZero : ''}`}>
                 🔥 {stats.streak}
@@ -942,23 +955,35 @@ export default function OutreachApp() {
             New
             <span className={styles.tabCount}>{data ? sortedNewContacts.filter(c => !dismissed.has(c.rowIndex)).length : 0}</span>
           </button>
-          <button className={`${styles.tab} ${tab === 'today' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('today')}>
-            Today
-            <span className={styles.tabCount}>{todayContactCount}</span>
-          </button>
-          <button className={`${styles.tab} ${tab === 'messages' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('messages')}>
-            Messages
-          </button>
-          <button className={`${styles.tab} ${tab === 'cake' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('cake')}>
-            Cake
+          <button className={`${styles.tab} ${tab === 'focus' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('focus')}>
+            Focus
+            <span className={styles.tabCount}>{focusContactCount}</span>
           </button>
           <button className={`${styles.tab} ${tab === 'connections' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('connections')}>
             All
             <span className={styles.tabCount}>{data ? data.allContacts.length : 0}</span>
           </button>
-          <button className={`${styles.tab} ${tab === 'stats' ? styles.tabActive : ''}`} onClick={() => handleTabSwitch('stats')}>
-            Stats
-          </button>
+          <div className={styles.moreMenuWrap}>
+            <button
+              className={`${styles.tab} ${MORE_TABS.some(m => m.tab === tab) ? styles.tabActive : ''}`}
+              onClick={() => setMoreMenuOpen(o => !o)}
+            >
+              ⋯
+            </button>
+            {moreMenuOpen && (
+              <div className={styles.moreMenu}>
+                {MORE_TABS.map(m => (
+                  <button
+                    key={m.tab}
+                    className={`${styles.moreMenuItem} ${tab === m.tab ? styles.moreMenuItemActive : ''}`}
+                    onClick={() => { handleTabSwitch(m.tab); setMoreMenuOpen(false); }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -978,663 +1003,76 @@ export default function OutreachApp() {
 
         {/* ── CAKE TAB ── */}
         {tab === 'cake' ? (
-          <div className={styles.cakePage}>
-            <div className={styles.cakeCard}>
-              <div className={styles.cakeCardTitle}>ChatGPT prompt</div>
-              <p className={styles.cakePromptText}>
-                {`I'm generating images of cakes for marketing outreach campaigns. Replace the cake topper image with a photo image of the brand provided. Content of the photo image are: Brand logo top and centre. Then the marketing headline central to the cake. Then client logo's (if any provided) underneath - if no client logos provided then do not make these up. Then bottom left is a placeholder QR code. Bottom right is placeholder contact details (email, phone, website). Cake top background should reflect that of the brand image provided, ensuring the photo is not a completely flat colour - it needs to look like a photo printed on a cake topper, not a badly photoshopped image stuck on.`}
-              </p>
-              <button
-                className={`${styles.copyBtn} ${copiedCake ? styles.copyBtnDone : ''}`}
-                onClick={() => {
-                  const prompt = `I'm generating images of cakes for marketing outreach campaigns. Replace the cake topper image with a photo image of the brand provided. Content of the photo image are: Brand logo top and centre. Then the marketing headline central to the cake. Then client logo's (if any provided) underneath - if no client logos provided then do not make these up. Then bottom left is a placeholder QR code. Bottom right is placeholder contact details (email, phone, website). Cake top background should reflect that of the brand image provided, ensuring the photo is not a completely flat colour - it needs to look like a photo printed on a cake topper, not a badly photoshopped image stuck on.`;
-                  navigator.clipboard.writeText(prompt).then(() => {
-                    setCopiedCake(true);
-                    if (cakeCopyTimeout.current) clearTimeout(cakeCopyTimeout.current);
-                    cakeCopyTimeout.current = setTimeout(() => setCopiedCake(false), 2000);
-                  });
-                }}
-              >
-                {copiedCake ? (
-                  <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
-                ) : (
-                  <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy prompt</>
-                )}
-              </button>
-            </div>
-
-            <div className={styles.cakeCard}>
-              <div className={styles.cakeCardTitle}>Cake topper template</div>
-              <p className={styles.cakeHint}>Upload this image alongside the prompt and a screenshot of the contact's website into ChatGPT.</p>
-              <a
-                className={styles.cakeTemplateBtn}
-                href="https://drive.google.com/file/d/1ABzTiKcqTw8UfkEVXvFt7-yM1zxxY81K/view?usp=sharing"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Open template in Drive
-              </a>
-            </div>
-          </div>
+          <CakeTab />
         )
 
         /* ── STATS TAB ── */
-        : tab === 'stats' ? (() => {
-          if (!stats) return null;
-
-          const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
-          const maxBar = Math.max(...sixWeeks.map(w => w.total), 1);
-
-          function delta(a: number, b: number) {
-            const d = a - b;
-            if (d === 0) return null;
-            return { value: Math.abs(d), positive: d > 0 };
-          }
-
-          function RateRow({ label, stage }: { label: string; stage: { sent: number; replied: number; rate: number | null } }) {
-            const pct = stage.rate ?? 0;
-            return (
-              <div className={styles.rateRow}>
-                <span className={styles.rateLabel}>{label}</span>
-                <div className={styles.rateBarWrap}>
-                  <div className={styles.rateBarFill} style={{ width: `${Math.min(pct, 100)}%` }} />
-                </div>
-                <span className={styles.ratePct}>
-                  {stage.rate !== null ? `${stage.rate}%` : '—'}
-                </span>
-                <span className={styles.rateSent}>{stage.replied}/{stage.sent}</span>
-              </div>
-            );
-          }
-
-          return (
-            <div className={styles.statsPage}>
-
-              {/* Today + streak */}
-              <div className={styles.statsCard}>
-                <div className={styles.statsTodayRow}>
-                  <div>
-                    <div className={styles.statsBigNum}>{todayCount}</div>
-                    <div className={styles.statsBigLabel}>outreach today</div>
-                    <div className={styles.statsTodaySplit}>{tNew} new · {tFu} follow-ups</div>
-                  </div>
-                  {streak > 0 && (
-                    <div className={styles.streakBadge}>
-                      <span className={styles.streakFlame}>🔥</span>
-                      <span className={styles.streakNum}>{streak}</span>
-                      <span className={styles.streakLabel}>day streak</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* This week vs last week */}
-              <div className={styles.statsCard}>
-                <div className={styles.statsCardTitle}>This week vs last</div>
-                <div className={styles.weekTable}>
-                  <div className={styles.weekTableHeader}>
-                    <span />
-                    <span>This week</span>
-                    <span>Last week</span>
-                    <span>Δ</span>
-                  </div>
-                  {[
-                    { label: 'New', a: thisWeek.newOutreach, b: lastWeek.newOutreach },
-                    { label: 'Follow-ups', a: thisWeek.followUps, b: lastWeek.followUps },
-                    { label: 'Total', a: thisWeek.total, b: lastWeek.total },
-                  ].map(({ label, a, b }) => {
-                    const d = delta(a, b);
-                    return (
-                      <div key={label} className={styles.weekTableRow}>
-                        <span className={styles.weekRowLabel}>{label}</span>
-                        <span className={styles.weekRowVal}>{a}</span>
-                        <span className={styles.weekRowVal}>{b}</span>
-                        <span className={`${styles.weekRowDelta} ${d ? (d.positive ? styles.deltaPos : styles.deltaNeg) : ''}`}>
-                          {d ? `${d.positive ? '+' : '-'}${d.value}` : '—'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 6-week bar chart */}
-              <div className={styles.statsCard}>
-                <div className={styles.statsCardTitle}>Last 6 weeks</div>
-                <svg viewBox={`0 0 ${sixWeeks.length * 52} 100`} className={styles.barChart} preserveAspectRatio="none">
-                  {sixWeeks.map((w, i) => {
-                    const x = i * 52 + 4;
-                    const barW = 44;
-                    const maxH = 72;
-                    const totalH = Math.round((w.total / maxBar) * maxH);
-                    const newH = Math.round((w.newOutreach / maxBar) * maxH);
-                    const fuH = totalH - newH;
-                    return (
-                      <g key={i}>
-                        {fuH > 0 && <rect x={x} y={maxH - totalH} width={barW} height={fuH} className={styles.barFollowUp} rx="2" />}
-                        {newH > 0 && <rect x={x} y={maxH - newH} width={barW} height={newH} className={styles.barNew} rx="2" />}
-                        <text x={x + barW / 2} y="88" textAnchor="middle" className={styles.barLabel}>{w.label}</text>
-                        {w.total > 0 && <text x={x + barW / 2} y={maxH - totalH - 3} textAnchor="middle" className={styles.barValue}>{w.total}</text>}
-                      </g>
-                    );
-                  })}
-                </svg>
-                <div className={styles.barLegend}>
-                  <span className={styles.legendNew}>■ New</span>
-                  <span className={styles.legendFu}>■ Follow-up</span>
-                </div>
-              </div>
-
-              {/* Reply rates by stage */}
-              <div className={styles.statsCard}>
-                <div className={styles.statsCardTitle}>Reply rates by stage</div>
-                <RateRow label="Initial message" stage={replyRates.initialMessage} />
-                <RateRow label="1st follow-up" stage={replyRates.firstFollowUp} />
-                <RateRow label="2nd follow-up" stage={replyRates.secondFollowUp} />
-              </div>
-
-            </div>
-          );
-        })()
+        : tab === 'stats' ? (
+          stats ? <StatsTab stats={stats} /> : null
+        )
 
         /* ── ALL CONTACTS TAB ── */
-        : tab === 'connections' ? (() => {
-          const allContacts = data?.allContacts ?? [];
-          const lists = Array.from(new Set(allContacts.map(c => c.list).filter(Boolean))).sort();
-          const functions = Array.from(new Set(allContacts.map(c => c.function).filter(Boolean))).sort();
-          const replies = Array.from(new Set(allContacts.map(c => c.reply).filter(Boolean))).sort();
-
-          const filtered = allContacts.filter(c => {
-            if (filterList && c.list !== filterList) return false;
-            if (filterFunction && c.function !== filterFunction) return false;
-            if (filterReply && c.reply !== filterReply) return false;
-            if (search.trim()) {
-              const q = search.toLowerCase();
-              if (!c.fullName.toLowerCase().includes(q) && !c.company.toLowerCase().includes(q) && !c.position.toLowerCase().includes(q)) return false;
-            }
-            return true;
-          });
-
-          const msgAbbrs = data?.messages.map(m => m.abbreviation) ?? [];
-
-          return (
-            <div className={styles.connectionsList}>
-              <input className={styles.searchInput} type="search" placeholder="Search name, company, position…" value={search} onChange={e => setSearch(e.target.value)} />
-              <div className={styles.filterRow}>
-                <select className={styles.filterSelect} value={filterList} onChange={e => setFilterList(e.target.value)}>
-                  <option value="">All lists</option>
-                  {lists.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <select className={styles.filterSelect} value={filterFunction} onChange={e => setFilterFunction(e.target.value)}>
-                  <option value="">All functions</option>
-                  {functions.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-                <select className={styles.filterSelect} value={filterReply} onChange={e => setFilterReply(e.target.value)}>
-                  <option value="">All replies</option>
-                  {replies.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <div className={styles.filterCount}>{filtered.length} contact{filtered.length !== 1 ? 's' : ''}</div>
-              {filtered.map(c => {
-                const isEditing = editingRowIndex === c.rowIndex;
-                const cDays = daysAgo(c.lastContacted);
-                const isOverdue = cDays !== null && cDays >= intervalDays && !!c.message && !c.reply;
-                return (
-                  <div key={c.rowIndex} className={styles.connectionItem}>
-                    <div className={styles.connectionRow} onClick={() => isEditing ? setEditingRowIndex(null) : openEdit(c)}>
-                      <div className={styles.connectionMain}>
-                        <span className={styles.connectionName}>{c.fullName}</span>
-                        <span className={styles.connectionCompany}>{[c.position, c.company].filter(Boolean).join(' · ')}</span>
-                        {c.list && <span className={styles.connectionList}>{c.list}</span>}
-                      </div>
-                      <div className={styles.connectionMeta}>
-                        {c.reply ? (
-                          <span className={`${styles.replyBadge} ${POSITIVE_REPLIES.includes(c.reply.toLowerCase()) ? styles.replyInterested : styles.replyOther}`}>
-                            {c.reply}
-                          </span>
-                        ) : isOverdue ? (
-                          <span className={styles.overdueBadge}>overdue</span>
-                        ) : c.lastContacted ? (
-                          <span className={styles.connectionDate}>{c.lastContacted}</span>
-                        ) : (
-                          <span className={styles.connectionNew}>new</span>
-                        )}
-                        <svg className={`${styles.expandIcon} ${isEditing ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                      </div>
-                    </div>
-                    {isEditing && (
-                      <div className={styles.editForm}>
-                        {[
-                          { key: 'list', label: 'List' },
-                          { key: 'function', label: 'Function' },
-                          { key: 'lastContacted', label: 'Last Contacted' },
-                          { key: 'comment', label: 'Comment' },
-                        ].map(({ key, label }) => (
-                          <div key={key} className={styles.editField}>
-                            <label className={styles.editLabel}>{label}</label>
-                            <input
-                              className={styles.editInput}
-                              value={editValues[key] ?? ''}
-                              onChange={e => setEditValues(v => ({ ...v, [key]: e.target.value }))}
-                            />
-                          </div>
-                        ))}
-                        <div className={styles.editField}>
-                          <label className={styles.editLabel}>Reply</label>
-                          <select className={styles.editInput} value={editValues.reply ?? ''} onChange={e => setEditValues(v => ({ ...v, reply: e.target.value }))}>
-                            {REPLY_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.editField}>
-                          <label className={styles.editLabel}>Message</label>
-                          <select className={styles.editInput} value={editValues.message ?? ''} onChange={e => setEditValues(v => ({ ...v, message: e.target.value }))}>
-                            <option value="">—</option>
-                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.editField}>
-                          <label className={styles.editLabel}>Follow Up 1</label>
-                          <select className={styles.editInput} value={editValues.followUpMessage1 ?? ''} onChange={e => setEditValues(v => ({ ...v, followUpMessage1: e.target.value }))}>
-                            <option value="">—</option>
-                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.editField}>
-                          <label className={styles.editLabel}>Follow Up 2</label>
-                          <select className={styles.editInput} value={editValues.followUpMessage2 ?? ''} onChange={e => setEditValues(v => ({ ...v, followUpMessage2: e.target.value }))}>
-                            <option value="">—</option>
-                            {msgAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.editActions}>
-                          <button className={styles.editCancelBtn} onClick={() => setEditingRowIndex(null)}>Cancel</button>
-                          <button className={styles.editSaveBtn} onClick={saveEdit} disabled={saveLoading}>
-                            {saveLoading ? 'Saving…' : 'Save'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()
+        : tab === 'connections' ? (
+          <ConnectionsTab
+            allContacts={data?.allContacts ?? []}
+            messageAbbrs={data?.messages.map(m => m.abbreviation) ?? []}
+            intervalDays={intervalDays}
+            editingRowIndex={editingRowIndex}
+            editValues={editValues}
+            saveLoading={saveLoading}
+            onOpenEdit={openEdit}
+            onCloseEdit={() => setEditingRowIndex(null)}
+            onEditValueChange={(field, value) => setEditValues(v => ({ ...v, [field]: value }))}
+            onSaveEdit={saveEdit}
+          />
+        )
 
         /* ── MESSAGES TAB ── */
-        : tab === 'messages' ? (() => {
-          const stats: MessageStats[] = data ? getMessageStats(data.allContacts, data.messages) : [];
-          const statsMap = Object.fromEntries(stats.map(s => [s.abbreviation, s]));
-          const messages = data?.messages ?? [];
+        : tab === 'messages' ? (
+          <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} />
+        )
 
-          // Group by messageType, sorted by reply rate desc within each group
-          const groups = Array.from(new Set(messages.map(m => m.messageType))).map(type => ({
-            type,
-            messages: messages
-              .filter(m => m.messageType === type)
-              .sort((a, b) => {
-                const ra = statsMap[a.abbreviation]?.replyRate ?? -1;
-                const rb = statsMap[b.abbreviation]?.replyRate ?? -1;
-                return rb - ra;
-              }),
-          }));
-
-          return (
-            <div className={styles.messagesList}>
-              {/* View toggle */}
-              <div className={styles.viewToggle}>
-                <button
-                  className={`${styles.viewToggleBtn} ${messagesView === 'cards' ? styles.viewToggleActive : ''}`}
-                  onClick={() => setMessagesView('cards')}
-                >Cards</button>
-                <button
-                  className={`${styles.viewToggleBtn} ${messagesView === 'table' ? styles.viewToggleActive : ''}`}
-                  onClick={() => setMessagesView('table')}
-                >Table</button>
-              </div>
-
-              {messagesView === 'table' ? (
-                <div className={styles.msgTableGroups}>
-                  {groups.map(({ type, messages: groupMsgs }) => (
-                    <div key={type} className={styles.msgTableGroup}>
-                      <div className={styles.msgTableGroupHeader}>{type}</div>
-                      {groupMsgs.map(msg => {
-                        const s = statsMap[msg.abbreviation];
-                        return (
-                          <div key={msg.abbreviation} className={styles.msgTableRow}>
-                            <span className={styles.msgTableRate}>
-                              {s?.replyRate !== null && s?.replyRate !== undefined ? `${s.replyRate}%` : '—'}
-                            </span>
-                            <span className={styles.msgTableAbbr}>{msg.abbreviation}</span>
-                            {s?.sent > 0 && (
-                              <span className={styles.msgTableSent}>{s.replied}/{s.eligible} of {s.sent} sent</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                messages.map((msg, i) => {
-                  const s = statsMap[msg.abbreviation];
-                  return (
-                    <div key={i} className={styles.messageItem}>
-                      <div className={styles.messageItemHeader}>
-                        <div className={styles.messageItemMeta}>
-                          <span className={styles.messageTypeBadge}>{msg.messageType}</span>
-                          <span className={styles.messageTarget}>{msg.target}</span>
-                        </div>
-                        <div className={styles.messageItemRight}>
-                          {s?.replyRate !== null && s?.replyRate !== undefined && (
-                            <span className={styles.ratePill}>{s.replyRate}%</span>
-                          )}
-                          <span className={styles.messageAbbr}>{msg.abbreviation}</span>
-                        </div>
-                      </div>
-                      {s && s.sent > 0 && (
-                        <div className={styles.messageSentRow}>
-                          {s.replied} positive / {s.sent} sent
-                          {s.eligible < s.sent && (
-                            <span className={styles.messageSentNote}>
-                              {' '}· rate based on {s.eligible} sent 7+ days ago
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <p className={styles.messageItemBody}>{msg.fullMessage}</p>
-                      <button
-                        className={`${styles.copyBtn} ${copiedMsg === msg.abbreviation ? styles.copyBtnDone : ''}`}
-                        onClick={() => handleCopyMessage(msg.fullMessage, msg.abbreviation)}
-                      >
-                        {copiedMsg === msg.abbreviation ? (
-                          <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
-                        ) : (
-                          <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          );
-        })()
-
-        /* ── TODAY TAB ── */
-        : tab === 'today' ? (() => {
-          const tierCounts: Record<Tier, number> = { 1: 0, 2: 0 };
-          todayGroups.forEach(g => g.contacts.forEach(c => { tierCounts[c.tier]++; }));
-          const visibleGroups = tierFilter
-            ? todayGroups.filter(g => g.contacts.some(c => c.tier === tierFilter))
-            : todayGroups;
-          // Require a real campaign status so ICP-only rows (no cake, blank
-          // Status, tracked purely for fit signal) never appear as if they're
-          // being actively chased
-          const watchedCompanies = (data?.campaigns ?? []).filter(c => c.status && !isCampaignClosed(c.status));
-          const watchedKeys = new Set(watchedCompanies.map(c => normAbbr(c.company)));
-          const allCompanyNames = Array.from(
-            new Set((data?.allContacts ?? []).map(c => c.company).filter(Boolean))
-          ).sort();
-          const companySuggestions = newCompanyName.trim()
-            ? allCompanyNames
-                .filter(name => normAbbr(name).includes(normAbbr(newCompanyName)) && !watchedKeys.has(normAbbr(name)))
-                .slice(0, 8)
-            : [];
-
-          return (
-            <div className={styles.todayPage}>
-              <div className={styles.tierChipsRow}>
-                {([1, 2] as Tier[]).map(t => (
-                  <button
-                    key={t}
-                    className={`${styles.tierChip} ${styles[TIER_STYLE[t]]} ${tierFilter === t ? styles.tierChipActive : ''}`}
-                    onClick={() => setTierFilter(f => (f === t ? null : t))}
-                  >
-                    {TIER_ICONS[t]} {tierCounts[t]}
-                  </button>
-                ))}
-                <button className={styles.manageBtn} onClick={() => setManageOpen(o => !o)}>
-                  {manageOpen ? 'Close' : 'Manage companies'}
-                </button>
-              </div>
-
-              {manageOpen && (
-                <div className={styles.managePanel}>
-                  <div className={styles.manageAddWrap}>
-                    <div className={styles.manageAddRow}>
-                      <input
-                        className={styles.manageInput}
-                        placeholder="Company name"
-                        value={newCompanyName}
-                        onChange={e => setNewCompanyName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleAddCompany()}
-                      />
-                      <button className={styles.manageAddBtn} onClick={() => handleAddCompany()}>Add</button>
-                    </div>
-                    {companySuggestions.length > 0 && (
-                      <div className={styles.manageSuggestions}>
-                        {companySuggestions.map(name => (
-                          <button key={name} className={styles.manageSuggestion} onClick={() => handleAddCompany(name)}>
-                            {name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className={styles.manageList}>
-                    {watchedCompanies.map(c => {
-                      const notesValue = companyNotesDrafts[c.company] ?? c.notes;
-                      const dirty = notesValue !== c.notes;
-                      return (
-                        <div key={c.company} className={styles.manageRow}>
-                          <div className={styles.manageRowTop}>
-                            <span className={styles.manageRowName}>{c.company}</span>
-                            {c.cakeSentDate && <span className={styles.manageCakeDate}>🎂 {c.cakeSentDate}</span>}
-                            <select
-                              className={styles.manageStageSelect}
-                              value={CAMPAIGN_STAGES.includes(c.status as typeof CAMPAIGN_STAGES[number]) ? c.status : ''}
-                              onChange={e => e.target.value && handleSetCompanyStage(c.company, e.target.value)}
-                              aria-label={`Campaign stage for ${c.company}`}
-                            >
-                              {!CAMPAIGN_STAGES.includes(c.status as typeof CAMPAIGN_STAGES[number]) && (
-                                <option value="">{c.status || '— set stage —'}</option>
-                              )}
-                              {CAMPAIGN_STAGES.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className={styles.manageNotesRow}>
-                            <input
-                              className={styles.manageNotesInput}
-                              placeholder="Notes on this company…"
-                              value={notesValue}
-                              onChange={e => setCompanyNotesDrafts(prev => ({ ...prev, [c.company]: e.target.value }))}
-                              onKeyDown={e => e.key === 'Enter' && handleSaveCompanyNotes(c.company, notesValue)}
-                            />
-                            {dirty && (
-                              <button className={styles.manageNotesSaveBtn} onClick={() => handleSaveCompanyNotes(c.company, notesValue)}>
-                                Save
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {watchedCompanies.length === 0 && <span className={styles.manageEmpty}>No companies watched yet</span>}
-                  </div>
-                </div>
-              )}
-
-              {todayGroups.length === 0 ? (
-                <div className={styles.emptyState}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                    <polyline points="22 4 12 14.01 9 11.01"/>
-                  </svg>
-                  <p>All caught up</p>
-                </div>
-              ) : visibleGroups.map(g => {
-                const isExpanded = expandedCompanies.has(g.company);
-                return (
-                  <div key={g.company} className={styles.companyCard}>
-                    <div
-                      className={styles.companyHeader}
-                      onClick={() => setExpandedCompanies(prev => {
-                        const next = new Set(prev);
-                        if (next.has(g.company)) next.delete(g.company); else next.add(g.company);
-                        return next;
-                      })}
-                    >
-                      <span className={styles.companyName}>{g.company}</span>
-                      <span className={`${styles.companyTierBadge} ${styles[TIER_STYLE[g.tier]]}`}>
-                        {TIER_ICONS[g.tier]} {g.tier === 1 && g.stage ? g.stage : TIER_LABELS[g.tier]}
-                      </span>
-                      {g.maxOverdueDays !== null && g.maxOverdueDays > 0 && (
-                        <span className={styles.overdueBadge}>+{g.maxOverdueDays}d</span>
-                      )}
-                      <span className={styles.companyDueCount}>{g.contacts.length} due</span>
-                      <svg className={`${styles.expandIcon} ${isExpanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
-                    </div>
-
-                    {isExpanded && (
-                      <div className={styles.companyContacts}>
-                        {g.contacts.map(c => {
-                          const initials = `${c.firstName[0] ?? ''}${c.lastName[0] ?? ''}`.toUpperCase();
-                          const menu = activeMenu?.rowIndex === c.rowIndex ? activeMenu.type : null;
-                          return (
-                            <div key={c.rowIndex} className={styles.todayContact}>
-                              <div className={styles.todayContactTop}>
-                                <div className={styles.todayAvatar}>{initials}</div>
-                                <div className={styles.todayContactMeta}>
-                                  <div className={styles.todayContactNameRow}>
-                                    <span className={styles.todayContactName}>{c.fullName}</span>
-                                    <span className={styles.channelIcons}>
-                                      {c.url && (
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" className={styles.channelIcon} aria-label="Has LinkedIn"><title>LinkedIn</title><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                                      )}
-                                      {c.email && (
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.channelIcon} aria-label="Has email"><title>Email</title><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
-                                      )}
-                                      {c.phone && (
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.channelIcon} aria-label="Has phone number"><title>Phone</title><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.36 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.34 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                                      )}
-                                    </span>
-                                  </div>
-                                  <span className={styles.todayContactSub}>
-                                    {c.position}{c.position && (c.lastContacted || c.reply) ? ' · ' : ''}
-                                    {c.lastContacted ? `${daysAgo(c.lastContacted)}d ago` : c.reply || 'never contacted'}
-                                  </span>
-                                </div>
-                                {c.overdueDays !== null && c.overdueDays > 0 && (
-                                  <span className={styles.todayOverdue}>+{c.overdueDays}d</span>
-                                )}
-                              </div>
-
-                              {(parseInt(c.followUps) || 0) >= 2 && !c.reply && (
-                                <div className={styles.emailNudge}>
-                                  {'\u{1F4E7}'} {parseInt(c.followUps)} follow-ups, no reply — time to try email
-                                </div>
-                              )}
-
-                              {menu === 'snooze' ? (
-                                <div className={styles.todayMenuRow}>
-                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 1)}>1 day</button>
-                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 3)}>3 days</button>
-                                  <button className={styles.todayMenuBtn} onClick={() => handleSnooze(c, 7)}>1 week</button>
-                                  <button className={styles.todayMenuBtn} onClick={() => setActiveMenu(null)}>Cancel</button>
-                                </div>
-                              ) : menu === 'replied' ? (
-                                <div className={styles.todayMenuRow}>
-                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`} onClick={() => handleReplied(c, 'Interested')}>Interested</button>
-                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`} onClick={() => handleMeetingBooked(c)}>Meeting booked</button>
-                                  <button className={`${styles.todayMenuBtn} ${styles.todayMenuRed}`} onClick={() => handleReplied(c, 'Not interested')}>Not interested</button>
-                                  <button className={styles.todayMenuBtn} onClick={() => setActiveMenu(null)}>Cancel</button>
-                                </div>
-                              ) : (
-                                <div className={styles.todayActionsRow}>
-                                  <button className={`${styles.todayActionBtn} ${styles.todayActionGreen}`} onClick={() => handleTodayDone(c)}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                    Done
-                                  </button>
-                                  <button className={styles.todayActionBtn} onClick={() => setActiveMenu({ rowIndex: c.rowIndex, type: 'snooze' })}>Snooze</button>
-                                  <button className={styles.todayActionBtn} onClick={() => setActiveMenu({ rowIndex: c.rowIndex, type: 'replied' })}>Replied</button>
-                                  {c.url && (
-                                    <button className={styles.todayChannelBtn} onClick={() => handleLinkedIn(c)} aria-label="Open LinkedIn">
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                                    </button>
-                                  )}
-                                  {c.email ? (
-                                    <button
-                                      className={`${styles.todayChannelBtn} ${styles.emailReadyBtn}`}
-                                      onClick={() => handleDraftEmail(c)}
-                                      disabled={!!emailBusy[c.rowIndex]}
-                                      aria-label="Draft email with AI"
-                                      title="AI-draft an email into your Gmail drafts"
-                                    >
-                                      {emailBusy[c.rowIndex] === 'drafting' ? (
-                                        <span className={styles.miniSpinner} />
-                                      ) : (
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
-                                      )}
-                                    </button>
-                                  ) : (
-                                    <button
-                                      className={styles.todayChannelBtn}
-                                      onClick={() => handleFindEmail(c)}
-                                      disabled={!!emailBusy[c.rowIndex]}
-                                      aria-label="Find email with FullEnrich"
-                                      title="Find this contact's email (uses FullEnrich credits)"
-                                    >
-                                      {emailBusy[c.rowIndex] === 'enriching' ? (
-                                        <span className={styles.miniSpinner} />
-                                      ) : (
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="14" height="12" rx="2"/><path d="m16 7-7 4-7-4"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="m21 20 2 2"/></svg>
-                                      )}
-                                    </button>
-                                  )}
-                                  {c.phone && (
-                                    <button className={styles.todayChannelBtn} onClick={() => handleCallContact(c)} aria-label="Call">
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.36 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.34 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-
-                              <div className={styles.todayCommentRow}>
-                                <input
-                                  className={styles.todayCommentInput}
-                                  placeholder="Add a comment…"
-                                  value={commentDrafts[c.rowIndex] ?? c.comment}
-                                  onChange={e => setCommentDrafts(prev => ({ ...prev, [c.rowIndex]: e.target.value }))}
-                                  onKeyDown={e => e.key === 'Enter' && handleSaveComment(c)}
-                                />
-                                {(commentDrafts[c.rowIndex] ?? c.comment) !== c.comment && (
-                                  <button className={styles.todayCommentSaveBtn} onClick={() => handleSaveComment(c)}>Save</button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()
+        /* ── FOCUS TAB ── */
+        : tab === 'focus' ? (
+          <FocusTab
+            groups={focusGroups}
+            suggestions={data?.focusSuggestions ?? []}
+            allContacts={data?.allContacts ?? []}
+            focusedCompanies={(data?.campaigns ?? []).filter(c => c.focus)}
+            tierFilter={tierFilter}
+            onTierFilterChange={setTierFilter}
+            manageOpen={manageOpen}
+            onToggleManage={() => setManageOpen(o => !o)}
+            newCompanyName={newCompanyName}
+            onNewCompanyNameChange={setNewCompanyName}
+            onAddToFocus={handleAddToFocus}
+            onRemoveFromFocus={handleRemoveFromFocus}
+            onSetStage={handleSetCompanyStage}
+            companyNotesDrafts={companyNotesDrafts}
+            onNotesDraftChange={(company, value) => setCompanyNotesDrafts(prev => ({ ...prev, [company]: value }))}
+            onSaveNotes={handleSaveCompanyNotes}
+            expandedCompanies={expandedCompanies}
+            onToggleExpanded={company => setExpandedCompanies(prev => {
+              const next = new Set(prev);
+              if (next.has(company)) next.delete(company); else next.add(company);
+              return next;
+            })}
+            activeMenu={activeMenu}
+            onSetActiveMenu={setActiveMenu}
+            onSnooze={handleSnooze}
+            onReplied={handleReplied}
+            onMeetingBooked={handleMeetingBooked}
+            onDone={handleFocusDone}
+            commentDrafts={commentDrafts}
+            onCommentDraftChange={(rowIndex, value) => setCommentDrafts(prev => ({ ...prev, [rowIndex]: value }))}
+            onSaveComment={handleSaveComment}
+            onLinkedIn={handleLinkedIn}
+            onDraftEmail={handleDraftEmail}
+            onFindEmail={handleFindEmail}
+            onCallContact={handleCallContact}
+            emailBusy={emailBusy}
+          />
+        )
 
         /* ── FOLLOW-UPS / NEW CONTACTS TABS ── */
         : queue.length === 0 ? (

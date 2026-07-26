@@ -55,27 +55,42 @@ function doPost(e) {
   if (body.campaign) {
     var campSheet = ss.getSheetByName('Campaigns');
     if (campSheet) {
+      // Header-driven like Connections (see sheetHeaderIndex_) - the sheet
+      // can be reorganized, and new firmographic/ICP columns added, without
+      // this needing to change.
+      var companyColIdx = campaignsHeaderIndex_('Company') || 1;
+      var statusColIdx = campaignsHeaderIndex_('Status') || 2;
+      var cakeSentColIdx = campaignsHeaderIndex_('Cake sent') || 3;
+      var notesColIdx = campaignsHeaderIndex_('Notes') || 4;
+      var focusColIdx = campaignsHeaderIndexOrAppend_('Focus');
+
       var isDelivered = String(body.campaign.status || '').toLowerCase() === 'delivered';
       var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
       var rows = campSheet.getDataRange().getValues();
       var target = String(body.campaign.company).trim().toLowerCase();
       var found = false;
       for (var i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]).trim().toLowerCase() === target) {
+        if (String(rows[i][companyColIdx - 1]).trim().toLowerCase() === target) {
           if (body.campaign.status !== undefined) {
-            campSheet.getRange(i + 1, 2).setValue(body.campaign.status);
+            campSheet.getRange(i + 1, statusColIdx).setValue(body.campaign.status);
             // first transition to Delivered stamps the cake-sent date
-            if (isDelivered && !String(rows[i][2] || '').trim()) {
-              campSheet.getRange(i + 1, 3).setValue(todayStr);
+            if (isDelivered && !String(rows[i][cakeSentColIdx - 1] || '').trim()) {
+              campSheet.getRange(i + 1, cakeSentColIdx).setValue(todayStr);
             }
           }
-          if (body.campaign.notes !== undefined) campSheet.getRange(i + 1, 4).setValue(body.campaign.notes);
+          if (body.campaign.notes !== undefined) campSheet.getRange(i + 1, notesColIdx).setValue(body.campaign.notes);
+          if (body.campaign.focus !== undefined) campSheet.getRange(i + 1, focusColIdx).setValue(body.campaign.focus ? 'TRUE' : '');
           found = true;
           break;
         }
       }
       if (!found) {
-        campSheet.appendRow([body.campaign.company, body.campaign.status || '', isDelivered ? todayStr : '', body.campaign.notes || '']);
+        var newRow = campSheet.getLastRow() + 1;
+        campSheet.getRange(newRow, companyColIdx).setValue(body.campaign.company);
+        if (body.campaign.status !== undefined) campSheet.getRange(newRow, statusColIdx).setValue(body.campaign.status);
+        if (isDelivered) campSheet.getRange(newRow, cakeSentColIdx).setValue(todayStr);
+        if (body.campaign.notes !== undefined) campSheet.getRange(newRow, notesColIdx).setValue(body.campaign.notes);
+        if (body.campaign.focus !== undefined) campSheet.getRange(newRow, focusColIdx).setValue(body.campaign.focus ? 'TRUE' : '');
       }
     }
   }
@@ -183,9 +198,10 @@ function testGmailSearch() {
 // below locates columns by header TEXT, never by fixed letter/position, so
 // the sheet can be reordered without these silently reading/writing the
 // wrong cells next time they're run.
-function connectionsHeaderIndex_(headerText) {
-  var conn = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Connections');
-  var headers = conn.getRange(1, 1, 1, conn.getLastColumn()).getValues()[0];
+function sheetHeaderIndex_(sheetName, headerText) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return null;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var target = headerText.trim().toLowerCase();
   for (var i = 0; i < headers.length; i++) {
     if (String(headers[i]).trim().toLowerCase() === target) return i + 1; // 1-based
@@ -194,13 +210,29 @@ function connectionsHeaderIndex_(headerText) {
 }
 
 // Same, but appends a new column with this header if it isn't found yet.
-function connectionsHeaderIndexOrAppend_(headerText) {
-  var idx = connectionsHeaderIndex_(headerText);
+function sheetHeaderIndexOrAppend_(sheetName, headerText) {
+  var idx = sheetHeaderIndex_(sheetName, headerText);
   if (idx) return idx;
-  var conn = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Connections');
-  var newCol = conn.getLastColumn() + 1;
-  conn.getRange(1, newCol).setValue(headerText);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  var newCol = sheet.getLastColumn() + 1;
+  sheet.getRange(1, newCol).setValue(headerText);
   return newCol;
+}
+
+function connectionsHeaderIndex_(headerText) {
+  return sheetHeaderIndex_('Connections', headerText);
+}
+
+function connectionsHeaderIndexOrAppend_(headerText) {
+  return sheetHeaderIndexOrAppend_('Connections', headerText);
+}
+
+function campaignsHeaderIndex_(headerText) {
+  return sheetHeaderIndex_('Campaigns', headerText);
+}
+
+function campaignsHeaderIndexOrAppend_(headerText) {
+  return sheetHeaderIndexOrAppend_('Campaigns', headerText);
 }
 
 function colLetterFromIndex_(index1Based) {

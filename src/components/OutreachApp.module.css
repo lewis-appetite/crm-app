@@ -85,6 +85,50 @@
   color: var(--accent);
 }
 
+.moreMenuWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.moreMenuWrap .tab {
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.moreMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  background: var(--surface2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-width: 120px;
+}
+
+.moreMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 13px;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.moreMenuItem:last-child {
+  border-bottom: none;
+}
+
+.moreMenuItem:hover {
+  background: var(--surface);
+}
+
+.moreMenuItemActive {
+  color: var(--accent);
+}
+
 /* Main scroll area */
 .main {
   flex: 1;
@@ -1329,6 +1373,17 @@
   filter: grayscale(1);
 }
 
+.regionChip {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 20px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .comboChip {
   font-family: 'DM Mono', monospace;
   font-size: 12px;
@@ -1813,6 +1868,53 @@
 
 .manageSuggestion:hover {
   background: var(--surface);
+}
+
+.manageAutoSuggest {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.manageAutoSuggestLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.manageAutoSuggest .manageSuggestions {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: none;
+  overflow: visible;
+  background: none;
+  border: none;
+}
+
+.manageAutoSuggest .manageSuggestion {
+  display: inline-block;
+  width: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--surface2);
+}
+
+.manageAutoSuggest .manageSuggestion:hover {
+  background: var(--accent-dim);
+}
+
+.followUpDueBadge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+  margin-bottom: 6px;
+  display: inline-block;
 }
 
 .manageList {

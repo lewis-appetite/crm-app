@@ -63,21 +63,25 @@ Three Google Sheets tabs:
 Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts. Other actions logged: `snooze` (detail = reappear date, read by `getActiveSnoozes`), `emaildraft` (detail = auto/manual, drives auto-draft dedupe), `callbooked`.
 
 ### Campaigns tab (cake-campaign pipeline + company-level ICP tracking)
-| Col | Field |
-|-----|-------|
-| A | Company (matched to Connections via `normalizeCompany`) |
-| B | Status — lifecycle stages mirroring the Appetite platform: `Planned` / `Delivered` / `Reply` / `Meeting` / `Pipeline` / `Closed Won` / `Closed Lost`. Blank for ICP-only rows (see below) |
-| C | Cake sent (date — auto-stamped by the Apps Script on first transition to Delivered) |
-| D | Notes |
-| E | Industry |
-| F | Company Size |
-| G | Funding Stage |
-| H | Region |
-| I | ICP Signal — for companies that never got a cake: `Interested (no cake)` / `Not a fit` / blank |
 
-Not every row is a real campaign — E–I let ICP-fit signal from ordinary (no-cake) LinkedIn/email outreach live alongside actual cake campaigns, so patterns can be found across both when asked. These rows are added directly in the sheet (no app UI for it), typically after Claude scans Connections for un-logged strong signals and hands over a candidate list to review.
+Like Connections, columns are resolved by **header text**, not fixed position (`buildCampaignsColumnMap` / `CAMPAIGNS_FIELD_HEADERS` in `src/lib/sheets.ts`, mirrored in `apps-script/Code.gs` by `campaignsHeaderIndex_`/`campaignsHeaderIndexOrAppend_`). The sheet can be reordered and columns can be added without touching code — a field just reads as `''` if its header isn't found, rather than silently reading the wrong column. Current fields and their header text:
 
-`isCampaignActive` (`src/lib/sheets.ts`) is a strict **allowlist** (status contains delivered/reply/meeting/pipeline/"cake sent") — deliberately not "anything not closed/planned", because blank-Status ICP rows must default to inactive or they'd silently get pulled into Today's Tier 1 cake-chase cadence. `isCampaignClosed`/`isCampaignPlanned` still keyword-match as before. The Manage Companies panel additionally requires a non-empty Status, so ICP-only rows never appear there either — that list is scoped to real campaigns only. Managed from the Today tab's Manage companies panel (stage dropdown per company) for real campaigns.
+| Field | Header text |
+|-------|-------------|
+| Company (matched to Connections via `normalizeCompany`) | `Company` |
+| Status — lifecycle stages mirroring the Appetite platform: `Planned` / `Delivered` / `Reply` / `Meeting` / `Pipeline` / `Closed Won` / `Closed Lost`. Blank for ICP-only rows (see below) | `Status` |
+| Cake sent (date — auto-stamped by the Apps Script on first transition to Delivered) | `Cake sent` |
+| Notes | `Notes` |
+| Industry | `Industry` |
+| Company Size | `Company Size` |
+| Funding Stage | `Funding Stage` |
+| Region (firmographic, unrelated to the Connections tab's time-of-day Region) | `Region` |
+| ICP Fit (freeform, e.g. `Strong`) | `ICP Fit` |
+| Focus — TRUE/blank, manual Focus-tab shortlist flag. Independent of Status; app-written via `handleAddToFocus`/`handleRemoveFromFocus`, read by `getFocusQueue`/`getFocusSuggestions` in `sheets.ts` | `Focus` |
+
+Not every row is a real campaign — the firmographic/ICP fields let signal from ordinary (no-cake) LinkedIn/email outreach live alongside actual cake campaigns, so patterns can be found across both when asked. These rows are added directly in the sheet (no app UI for it), typically after Claude scans Connections for un-logged strong signals and hands over a candidate list to review.
+
+`isCampaignActive` (`src/lib/sheets.ts`) is a strict **allowlist** (status contains delivered/reply/meeting/pipeline/"cake sent") — deliberately not "anything not closed/planned", because blank-Status ICP rows must default to inactive or they'd silently get pulled into Focus's Tier 1 cake-chase cadence. `isCampaignClosed`/`isCampaignPlanned` still keyword-match as before. Focus tab membership is separately gated by the `Focus` flag (see below), so ICP-only and non-shortlisted rows never appear there either. Managed from the Focus tab's "Manage shortlist" panel (stage dropdown + Focus toggle per company).
 
 ## Key Logic (`src/lib/sheets.ts`)
 
@@ -170,21 +174,21 @@ User asked for a larger restructure (2026-07-25 onward). Status per piece, so a 
 - Follow-up interval changed 14 → 7 calendar days (`FOLLOW_UP_INTERVAL_DAYS`).
 - Connections column mapping made fully header-driven (see Data Model above) — this was prerequisite work so the sheet could be freely reorganized.
 - User has since reordered the whole Connections sheet (grouped contact info, pushed Message/FU1/FU2/Last Contacted to the end) and added a **Region** column — confirmed working with zero code changes, proving the header-driven refactor.
+- **Component split**: `OutreachApp.tsx` (was 2000+ lines) split into `src/components/tabs/{CakeTab,StatsTab,MessagesTab,ConnectionsTab,FocusTab}.tsx`. State/handlers with cross-tab reach (contact data, edit state, campaign mutations) stay in `OutreachApp.tsx` and are passed down as props; tab-local UI state (search/filter, view toggle, copy-timeout) moved into the tab component that owns it.
+- **Region-based time-of-day sort**: `getRegionMode`/`normalizeRegion`/`regionSortRank` in `sheets.ts`. Matches `United Kingdom`/`UK`/`GB`/`Great Britain` and `United States`/`US`/`USA`; blank region sorts mid-pack (never filtered). 06:00–21:59 local time favors UK contacts in New/Follow-ups ordering, 22:00–05:59 favors US; header shows a live "🇬🇧 UK hours"/"🇺🇸 US hours" chip. Follow-ups queue is re-sorted client-side (stable sort layered on the server's cadence-priority order); New tab sorts region rank between the cake-image check and the user's chosen sort.
+- **Nav restructure**: collapsed to 4 top-level tabs (Follow-ups / New / Focus / All); Messages/Cake/Stats moved into a "⋯" dropdown menu (`MORE_TABS` in `OutreachApp.tsx`), still the same `Tab` values under the hood.
+- **Focus tab** replaces Today. `getFocusQueue` (`sheets.ts`) now gates group membership on `CampaignEntry.focus` (manual shortlist, Campaigns `Focus` column) instead of "any active/interested company" — Tier 1/Tier 2 cadence logic is unchanged, just scoped to shortlisted companies. `getFocusSuggestions` surfaces active-cake-campaign or Interested-reply companies not yet shortlisted, for one-tap add in the Focus tab's "Manage shortlist" panel (which also still handles per-company cake stage + notes, now with a Remove-from-Focus button per row).
+- **Overlap rule**: `getFollowUpQueue` now takes a `focusedCompanyKeys` set and excludes those companies' contacts — they only show in Focus. `TierContact.followUpDue` (computed via the shared `isFollowUpDue` predicate) badges "Follow-up also due" on Focus contacts who'd otherwise independently qualify for Follow-ups.
+- **Campaigns tab made header-driven** (like Connections): `buildCampaignsColumnMap`/`CAMPAIGNS_FIELD_HEADERS` in `sheets.ts` resolve every field (`Company`/`Status`/`Cake sent`/`Notes`/`Industry`/`Company Size`/`Funding Stage`/`Region`/`ICP Fit`/`Focus`) by header text rather than fixed column letter — triggered by discovering the original positional mapping had gone stale (real sheet had `ICP Fit` at J, not the assumed `ICP Signal` at I, and Region/Company Size/Funding Stage didn't line up either). `apps-script/Code.gs`'s campaign-write handler now resolves `Company`/`Status`/`Cake sent`/`Notes`/`Focus` via new `campaignsHeaderIndex_`/`campaignsHeaderIndexOrAppend_` helpers (generalized from the Connections ones into shared `sheetHeaderIndex_`/`sheetHeaderIndexOrAppend_`) instead of hardcoded `getRange(i+1, N)` column numbers.
 
-**Region column — live but unfinished:**
-- Header text is `Region`. Values in use are **`United Kingdom` / `United States`** (not `UK`/`US` as first assumed) — any sorting logic must match on the actual strings in use (and probably tolerate `UK`/`US`/`GB`/`USA` as aliases), not force the user to retag.
-- As of last check: 22 of ~3,204 contacts tagged (19 UK, 3 US), rest blank. Blank = always visible regardless of time-of-day (agreed design).
-- **Not yet built**: the actual sort logic — 06:00–21:59 UK time prioritizes UK contacts, 22:00–05:59 prioritizes US contacts. Agreed approach: sort region-appropriate contacts first with a header chip showing current mode, rest still visible/scrollable (not a hard filter).
+**Requires manual follow-up (not code):**
+- **Campaigns tab needs a column header `Focus`** (TRUE/blank), anywhere in the row — position no longer matters now that it's header-driven. Until this header exists, every company parses as `focus: false` and the Focus tab will show empty/only auto-suggestions.
+- **`apps-script/Code.gs` was updated again** (header-driven campaign writes, see above) — paste the latest version into the Apps Script editor and redeploy.
 
-**Not yet built — the bigger restructure:**
-- **Nav**: collapse to 4 tabs (Follow-ups / New / Focus / All). Messages / Cake / Stats move into a menu (⋯) rather than being top-level tabs.
-- **Focus tab** replaces Today. Agreed design: manual shortlist (you explicitly add companies) + auto-suggest from active cake campaigns and Interested replies for one-tap adding. Needs a new "shortlist" flag, likely a Campaigns column, not yet added.
-- **Overlap rule** (agreed): if a contact is both due for follow-up and at a Focus company, show in Focus only, badged "follow-up due" — not both places.
+**Not yet built:**
 - **A/B testing**: user defines tests in chat (2 existing template abbreviations + a stage), stored as a new **Experiments tab** (Test ID / Name / Stage / Variant A / Variant B / Status / Started / Ended / Winner / Notes) rather than an in-app builder. Assignment via deterministic hash of `(rowIndex + testId)` — not `rowIndex % 2`, since sheet position correlates with import batch/company/region and would confound results. Follow-ups tab gets a pinned section for contacts matching an active test's stage; New tab auto-shows the assigned initial-message variant. Results must show a sample-size/confidence gate ("142/400 sent — too early to call") rather than declaring winners on small numbers.
   - Volume reality at last check (2026-07-25): initial-message pool is huge (2,600+, can conclude in weeks). FU1 pool (~150, grows ~25/day) needs about a month for a directional read. FU2 pool (~73) needs 1–2 months — premature calls here would be noise, not signal. Re-check actual numbers before starting a test rather than trusting these.
 - **Desktop-responsive layout** — app is currently a fixed ~480px mobile shell (`.shell` in `OutreachApp.module.css`). Not started.
-
-**Open decision, asked twice, not yet answered:** whether to split `OutreachApp.tsx` (now 2000+ lines, every tab's view inline) into per-tab components before building the above, or push through and refactor later. Doing it first would make the Focus tab, nav collapse, and A/B UI meaningfully faster/safer to build.
 
 ---
 

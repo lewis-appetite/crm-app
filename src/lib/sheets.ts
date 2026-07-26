@@ -82,11 +82,14 @@ export interface ConnectionsColumnMap {
   letter: Record<string, string>; // field key -> column letter, for writes
 }
 
-export function buildConnectionsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+// Generic header-text column resolver, shared by any tab that wants
+// reorder-safe column access — match a field key to whatever column
+// currently has the matching header text, instead of a fixed position.
+function buildColumnMap(headerRow: string[], fieldHeaders: Record<string, string>): ConnectionsColumnMap {
   const index: Record<string, number> = {};
   const letter: Record<string, string> = {};
   const normalized = (headerRow || []).map(h => (h || '').trim().toLowerCase());
-  for (const [key, headerText] of Object.entries(CONNECTIONS_FIELD_HEADERS)) {
+  for (const [key, headerText] of Object.entries(fieldHeaders)) {
     const target = headerText.toLowerCase();
     const idx = normalized.findIndex(h => h === target);
     if (idx !== -1) {
@@ -95,6 +98,10 @@ export function buildConnectionsColumnMap(headerRow: string[]): ConnectionsColum
     }
   }
   return { index, letter };
+}
+
+export function buildConnectionsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+  return buildColumnMap(headerRow, CONNECTIONS_FIELD_HEADERS);
 }
 
 export function parseConnections(rows: string[][]): Contact[] {
@@ -156,13 +163,37 @@ export function parseActivity(rows: string[][]): ActivityEvent[] {
     .filter(e => e.date && e.action);
 }
 
-// Campaigns tab: A Company | B Status | C Cake sent (date) | D Notes |
-// E Industry | F Company Size | G Funding Stage | H Region | I ICP Signal
+// Campaigns tab — like Connections, columns are resolved by HEADER TEXT, not
+// fixed position (see buildCampaignsColumnMap below). The sheet has grown a
+// firmographic/ICP section (Industry, Company Size, Funding Stage, ICP Fit)
+// alongside the original cake-campaign columns; a field simply reads as ''
+// if its header isn't found, rather than silently reading the wrong column.
 //
-// Not every row here had a cake sent — E-I let ICP-fit signal from ordinary
-// (no-cake) outreach live alongside real cake campaigns, so patterns can be
-// found across both. Status/Cake sent stay meaningful only for actual
-// campaigns; blank Status is normal and expected for ICP-only rows.
+// Not every row is a real campaign — the firmographic/ICP fields let signal
+// from ordinary (no-cake) outreach live alongside real cake campaigns, so
+// patterns can be found across both. Status/Cake sent stay meaningful only
+// for actual campaigns; blank Status is normal and expected for ICP-only rows.
+//
+// Focus is independent of Status: it's "do I want this company in my Focus
+// shortlist right now", set explicitly (or via a one-tap suggestion), not
+// implied by cake-campaign stage.
+const CAMPAIGNS_FIELD_HEADERS: Record<string, string> = {
+  company: 'Company',
+  status: 'Status',
+  cakeSentDate: 'Cake sent',
+  notes: 'Notes',
+  industry: 'Industry',
+  companySize: 'Company Size',
+  fundingStage: 'Funding Stage',
+  region: 'Region',
+  icpFit: 'ICP Fit',
+  focus: 'Focus',
+};
+
+export function buildCampaignsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+  return buildColumnMap(headerRow, CAMPAIGNS_FIELD_HEADERS);
+}
+
 export interface CampaignEntry {
   company: string;
   status: string;
@@ -172,22 +203,27 @@ export interface CampaignEntry {
   companySize: string;
   fundingStage: string;
   region: string;
-  icpSignal: string;
+  icpFit: string;
+  focus: boolean;
 }
 
 export function parseCampaigns(rows: string[][]): CampaignEntry[] {
+  const { index: col } = buildCampaignsColumnMap(rows[0] || []);
+  const get = (row: string[], key: string) => (row[col[key]] ?? '').trim();
+
   return rows
     .slice(1)
     .map(row => ({
-      company: (row[0] || '').trim(),
-      status: (row[1] || '').trim(),
-      cakeSentDate: (row[2] || '').trim(),
-      notes: (row[3] || '').trim(),
-      industry: (row[4] || '').trim(),
-      companySize: (row[5] || '').trim(),
-      fundingStage: (row[6] || '').trim(),
-      region: (row[7] || '').trim(),
-      icpSignal: (row[8] || '').trim(),
+      company: get(row, 'company'),
+      status: get(row, 'status'),
+      cakeSentDate: get(row, 'cakeSentDate'),
+      notes: get(row, 'notes'),
+      industry: get(row, 'industry'),
+      companySize: get(row, 'companySize'),
+      fundingStage: get(row, 'fundingStage'),
+      region: get(row, 'region'),
+      icpFit: get(row, 'icpFit'),
+      focus: get(row, 'focus').toUpperCase() === 'TRUE',
     }))
     .filter(c => c.company);
 }
@@ -280,15 +316,24 @@ export function businessDaysAgo(dateStr: string): number | null {
   return count;
 }
 
-export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Contact[] {
+export function isFollowUpDue(c: Contact, intervalDays: number): boolean {
+  if (!c.message) return false;
+  if (!FOLLOW_UP_WORTHY.includes(c.reply.toLowerCase())) return false;
+  const days = daysAgo(c.lastContacted);
+  if (days === null) return false;
+  return days >= intervalDays;
+}
+
+// focusedCompanyKeys (normalizeCompany'd) are excluded here — those contacts
+// surface in the Focus tab instead, badged "follow-up due", so they're never
+// shown in both places at once.
+export function getFollowUpQueue(
+  contacts: Contact[],
+  intervalDays: number,
+  focusedCompanyKeys: Set<string> = new Set()
+): Contact[] {
   return contacts
-    .filter(c => {
-      if (!c.message) return false;
-      if (!FOLLOW_UP_WORTHY.includes(c.reply.toLowerCase())) return false;
-      const days = daysAgo(c.lastContacted);
-      if (days === null) return false;
-      return days >= intervalDays;
-    })
+    .filter(c => isFollowUpDue(c, intervalDays) && !focusedCompanyKeys.has(normalizeCompany(c.company)))
     .sort((a, b) => {
       // Sort by reply priority first (Interested → Yes → Blank → Referred)
       const aPri = REPLY_PRIORITY[a.reply.toLowerCase()] ?? 2;
@@ -308,6 +353,35 @@ export function getFollowUpQueue(contacts: Contact[], intervalDays: number): Con
 
 export function getNewContactsQueue(contacts: Contact[]): Contact[] {
   return contacts.filter(c => !c.message && !c.lastContacted && !isDead(c));
+}
+
+// Region-based time-of-day prioritization: UK waking hours favor UK contacts,
+// US waking hours favor US contacts. Blank region is never deprioritized
+// (still tagging in progress) - it sorts between the two, never last.
+const REGION_ALIASES: Record<string, 'uk' | 'us'> = {
+  'united kingdom': 'uk',
+  uk: 'uk',
+  gb: 'uk',
+  'great britain': 'uk',
+  'united states': 'us',
+  us: 'us',
+  usa: 'us',
+};
+
+export function normalizeRegion(region: string): 'uk' | 'us' | '' {
+  return REGION_ALIASES[region.trim().toLowerCase()] ?? '';
+}
+
+// 06:00-21:59 favors UK contacts, 22:00-05:59 favors US contacts
+export function getRegionMode(now: Date = new Date()): 'uk' | 'us' {
+  const h = now.getHours();
+  return h >= 6 && h < 22 ? 'uk' : 'us';
+}
+
+export function regionSortRank(region: string, mode: 'uk' | 'us'): number {
+  const r = normalizeRegion(region);
+  if (!r) return 1;
+  return r === mode ? 0 : 2;
 }
 
 // Same normalization used for cake-image filename matching — reused here so
@@ -345,7 +419,7 @@ export function isCampaignActive(status: string): boolean {
 // Materializes "why is this contact being tracked closely" into a plain-text
 // label written back to Connections col S (Priority) — so it's visible when
 // browsing the raw sheet, not just inside the Today tab. This mirrors
-// getTodayQueue's tier assignment but deliberately skips the cadence/due-date
+// getFocusQueue's tier assignment but deliberately skips the cadence/due-date
 // gating: Priority reflects the stable reason (cake company / positive
 // reply), not "due today", so it doesn't need rewriting every day.
 export function computePriorityLabel(contact: Contact, isActiveCakeCompany: boolean): string {
@@ -376,6 +450,7 @@ export type Tier = 1 | 2;
 export interface TierContact extends Contact {
   tier: Tier;
   overdueDays: number | null;
+  followUpDue: boolean; // also independently due in Follow-ups — badged, not duplicated there
 }
 
 export interface CompanyGroup {
@@ -386,24 +461,30 @@ export interface CompanyGroup {
   maxOverdueDays: number | null;
 }
 
-// Unified "Today" queue, cadence-based:
-// - Tier 1: contacts at active cake-campaign companies (Delivered/Reply/Meeting/
-//   Pipeline). Due when never touched, or >= cakeTouchDays WORKING days since
-//   last touch — not "everyone, every day".
-// - Tier 2: Interested/Yes replies from anywhere, due >= hotTouchDays calendar
-//   days after last touch. Hot leads chase faster than the 14-day cycle.
+// Focus queue, cadence-based, scoped to companies the user has explicitly
+// shortlisted (Campaigns!Focus = TRUE) — this is the "manual shortlist"
+// half of the Focus tab; getFocusSuggestions surfaces auto-suggest candidates
+// for one-tap adding to the shortlist.
+// - Tier 1: shortlisted companies with an active cake campaign (Delivered/
+//   Reply/Meeting/Pipeline). Due when never touched, or >= cakeTouchDays
+//   WORKING days since last touch.
+// - Tier 2: shortlisted companies' Interested/Yes replies, due >= hotTouchDays
+//   calendar days after last touch.
 // - A booked call (col R) graduates a contact out of both tiers.
-// - Planned campaigns aren't chased yet; Closed Won/Lost are out entirely.
-export function getTodayQueue(
+export function getFocusQueue(
   contacts: Contact[],
   campaigns: CampaignEntry[],
   cakeTouchDays: number,
   hotTouchDays: number,
+  intervalDays: number,
   snoozes: Record<number, Date> = {}
 ): CompanyGroup[] {
   const stageByCompany = new Map<string, string>();
+  const focusedKeys = new Set<string>();
   campaigns.forEach(c => {
-    if (isCampaignActive(c.status)) stageByCompany.set(normalizeCompany(c.company), c.status);
+    const key = normalizeCompany(c.company);
+    if (isCampaignActive(c.status)) stageByCompany.set(key, c.status);
+    if (c.focus) focusedKeys.add(key);
   });
 
   const today = new Date();
@@ -415,10 +496,11 @@ export function getTodayQueue(
     if (isDead(c)) return;
     if (!c.company) return;
     if (c.callBooked) return;
+    const key = normalizeCompany(c.company);
+    if (!focusedKeys.has(key)) return;
     const snoozedUntil = snoozes[c.rowIndex];
     if (snoozedUntil && snoozedUntil.getTime() >= today.getTime()) return;
 
-    const key = normalizeCompany(c.company);
     const campaignStage = stageByCompany.get(key) ?? null;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
 
@@ -446,7 +528,7 @@ export function getTodayQueue(
     }
     const group = groups.get(key)!;
     if (tier < group.tier) group.tier = tier;
-    group.contacts.push({ ...c, tier, overdueDays });
+    group.contacts.push({ ...c, tier, overdueDays, followUpDue: isFollowUpDue(c, intervalDays) });
   });
 
   const result = Array.from(groups.values());
@@ -467,6 +549,27 @@ export function getTodayQueue(
   result.sort((a, b) => a.tier - b.tier || (b.maxOverdueDays ?? -Infinity) - (a.maxOverdueDays ?? -Infinity));
 
   return result;
+}
+
+// Auto-suggest candidates for the Focus shortlist: companies with an active
+// cake campaign, or any contact with an Interested/Yes reply, not already
+// shortlisted. One-tap-add surface, not automatic membership.
+export function getFocusSuggestions(contacts: Contact[], campaigns: CampaignEntry[]): string[] {
+  const focusedKeys = new Set(campaigns.filter(c => c.focus).map(c => normalizeCompany(c.company)));
+  const candidates = new Map<string, string>(); // key -> display name
+
+  campaigns.forEach(c => {
+    const key = normalizeCompany(c.company);
+    if (isCampaignActive(c.status) && !focusedKeys.has(key)) candidates.set(key, c.company);
+  });
+  contacts.forEach(c => {
+    if (!c.company) return;
+    const key = normalizeCompany(c.company);
+    if (focusedKeys.has(key)) return;
+    if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) candidates.set(key, c.company);
+  });
+
+  return Array.from(candidates.values()).sort((a, b) => a.localeCompare(b));
 }
 
 export function suggestMessage(

@@ -6,9 +6,11 @@ import {
   parseCampaigns,
   getFollowUpQueue,
   getNewContactsQueue,
-  getTodayQueue,
+  getFocusQueue,
+  getFocusSuggestions,
   getActiveSnoozes,
   buildConnectionsColumnMap,
+  normalizeCompany,
 } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 
@@ -32,15 +34,18 @@ export async function GET() {
     const activity = parseActivity(activityRows);
     const campaigns = parseCampaigns(campaignRows);
 
-    const followUps = getFollowUpQueue(contacts, INTERVAL);
+    const focusedCompanyKeys = new Set(campaigns.filter(c => c.focus).map(c => normalizeCompany(c.company)));
+    const followUps = getFollowUpQueue(contacts, INTERVAL, focusedCompanyKeys);
     const newContacts = getNewContactsQueue(contacts);
     const snoozes = getActiveSnoozes(activity);
-    const today = getTodayQueue(contacts, campaigns, CAKE_TOUCH_DAYS, HOT_TOUCH_DAYS, snoozes);
+    const focus = getFocusQueue(contacts, campaigns, CAKE_TOUCH_DAYS, HOT_TOUCH_DAYS, INTERVAL, snoozes);
+    const focusSuggestions = getFocusSuggestions(contacts, campaigns);
 
     return NextResponse.json({
       followUps,
       newContacts,
-      today,
+      focus,
+      focusSuggestions,
       messages,
       allContacts: contacts,
       activity,
