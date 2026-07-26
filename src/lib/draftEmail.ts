@@ -1,5 +1,5 @@
 import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, businessDaysAgo, todayDMY, Contact } from '@/lib/sheets';
-import { fetchSheetRange } from '@/lib/sheetsApi';
+import { fetchSheetRange, resolveConnectionsColumn } from '@/lib/sheetsApi';
 import { fetchFromAppsScript } from '@/lib/appsScript';
 
 export type DraftEmailResult =
@@ -247,7 +247,14 @@ export async function draftEmailForContact(rowIndex: number, auto: boolean): Pro
     warnings.push(note ? `Ball's in their court — ${note}` : `They may already owe you a reply — check before chasing.`);
   }
 
+  // Drafting counts as touching the contact today - Lewis treats a created
+  // draft as good as sent, so the follow-up cadence shouldn't still think
+  // they're overdue once it's sitting in Gmail.
+  const lastContactedCol = await resolveConnectionsColumn('lastContacted');
+
   const draftResponse = await fetchFromAppsScript<{ draftMode: string | null; draftReplyError: string | null }>({
+    rowIndex,
+    cells: [{ col: lastContactedCol, value: todayDMY() }],
     draft: { to: target.email, subject, body, ...(targetThreadId ? { threadId: targetThreadId } : {}) },
     log: {
       date: todayDMY(),

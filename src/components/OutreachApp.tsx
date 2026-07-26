@@ -423,6 +423,26 @@ export default function OutreachApp() {
       const warnings: string[] = json.warnings ?? [];
       const msg = [`Draft for ${c.fullName} is in your Gmail drafts`, ...warnings.map(w => `⚠ ${w}`)].join('\n');
       setToast({ msg, kind: 'ok' });
+
+      // A created draft counts as touching the contact today - the server
+      // already stamped Last Contacted, mirror it locally so the queue and
+      // cadence reflect it immediately instead of waiting on a refetch.
+      const today = todayDMY();
+      setData(prev => {
+        if (!prev) return prev;
+        const upd = <T extends Contact>(x: T): T => (x.rowIndex !== c.rowIndex ? x : { ...x, lastContacted: today });
+        return {
+          ...prev,
+          allContacts: prev.allContacts.map(upd),
+          followUps: prev.followUps.map(upd),
+          newContacts: prev.newContacts.map(upd),
+          focus: prev.focus.map(g => ({ ...g, contacts: g.contacts.map(upd) })),
+        };
+      });
+      setDismissed(prev => new Set(prev).add(c.rowIndex));
+      const newQueue = queue.filter(q => q.rowIndex !== c.rowIndex);
+      setIndex(i => Math.min(i, Math.max(0, newQueue.length - 1)));
+      setCombo(x => x + 1);
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : 'Draft failed', kind: 'err' });
     } finally {
