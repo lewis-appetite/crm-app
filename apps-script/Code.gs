@@ -121,7 +121,7 @@ function doPost(e) {
   SpreadsheetApp.flush();
 
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError }))
+    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError, deployMarker: 'focus-fix-2026-07-26-v2' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -197,6 +197,35 @@ function testGmailSearch() {
   out.forEach(function (t) {
     Logger.log((t.isTargetThread ? '[TARGET] ' : '[company] ') + '"' + t.subject + '" — ' + t.messages.length + ' messages');
   });
+}
+
+// DIAGNOSTIC — run this once from the editor (Run > testFocusWrite), then
+// check the log (View > Logs) and the actual sheet. Isolates whether the
+// header-resolution + write logic itself works, independent of the web app
+// deployment - delete once the Focus write bug is confirmed fixed.
+function testFocusWrite() {
+  var campSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Campaigns');
+  Logger.log('campSheet found: ' + !!campSheet);
+
+  var companyColIdx = campaignsHeaderIndex_('Company') || 1;
+  var focusColIdx = campaignsHeaderIndexOrAppend_('Focus');
+  Logger.log('companyColIdx=' + companyColIdx + ', focusColIdx=' + focusColIdx);
+
+  var rows = campSheet.getDataRange().getValues();
+  var target = 'adfin';
+  var found = false;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][companyColIdx - 1]).trim().toLowerCase() === target) {
+      Logger.log('match at row ' + (i + 1) + ', current Focus cell value BEFORE write: "' + rows[i][focusColIdx - 1] + '"');
+      campSheet.getRange(i + 1, focusColIdx).setValue('TRUE');
+      SpreadsheetApp.flush();
+      var after = campSheet.getRange(i + 1, focusColIdx).getValue();
+      Logger.log('Focus cell value AFTER write + flush: "' + after + '"');
+      found = true;
+      break;
+    }
+  }
+  Logger.log('found=' + found);
 }
 
 // Header-driven column resolution for the Connections tab, mirroring

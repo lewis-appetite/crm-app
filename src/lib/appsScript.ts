@@ -20,8 +20,8 @@ export interface AppsScriptPayload {
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
 }
 
-export async function postToAppsScript(payload: AppsScriptPayload): Promise<void> {
-  await callAppsScript(payload);
+export async function postToAppsScript(payload: AppsScriptPayload): Promise<unknown> {
+  return callAppsScript(payload);
 }
 
 // For request types that return real data (currently just gmailSearch) rather
