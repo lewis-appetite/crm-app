@@ -151,7 +151,6 @@ export default function OutreachApp() {
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [copied, setCopied] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -694,9 +693,12 @@ export default function OutreachApp() {
     });
   }
 
-  async function handleAction(action: 'contacted' | 'dead', deadReason?: string) {
-    if (!contact || actionLoading) return;
-    setActionLoading(true);
+  // Optimistic: advances the queue immediately and fires the sheet write in
+  // the background rather than awaiting it - a slow Apps Script round trip
+  // (2-3s) shouldn't hold up the next card. Write failures still surface via
+  // the existing failedWrites banner/retry, same as everywhere else.
+  function handleAction(action: 'contacted' | 'dead', deadReason?: string) {
+    if (!contact) return;
 
     const c = contact;
     const cells: { col: string; value: string }[] = [];
@@ -714,7 +716,7 @@ export default function OutreachApp() {
       if (newFollowUpCount !== null) cells.push({ col: col('followUps'), value: String(newFollowUpCount) });
       cells.push({ col: col('lastContacted'), value: todayDMY() });
 
-      await updateSheet(c.rowIndex, cells, {
+      updateSheet(c.rowIndex, cells, {
         action: actionType,
         template: templateUsed,
         name: c.fullName,
@@ -752,7 +754,7 @@ export default function OutreachApp() {
     } else {
       const reason = deadReason || 'Dead lead';
       cells.push({ col: col('reply'), value: reason });
-      await updateSheet(c.rowIndex, cells, {
+      updateSheet(c.rowIndex, cells, {
         action: 'reply',
         detail: reason,
         name: c.fullName,
@@ -764,7 +766,6 @@ export default function OutreachApp() {
     const newQueue = queue.filter(q => q.rowIndex !== c.rowIndex);
     setIndex(i => Math.min(i, Math.max(0, newQueue.length - 1)));
     setSelectedMessage('');
-    setActionLoading(false);
   }
 
   function handleCopy() {
@@ -1312,7 +1313,6 @@ export default function OutreachApp() {
               <button
                 className={`${styles.actionBtn} ${styles.contactedBtn}`}
                 onClick={() => handleAction('contacted')}
-                disabled={actionLoading}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 Sent
@@ -1322,7 +1322,6 @@ export default function OutreachApp() {
                   <button
                     className={`${styles.actionBtn} ${styles.deadBtn}`}
                     onClick={() => handleAction('dead', 'Wrong location')}
-                    disabled={actionLoading}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     Wrong location
@@ -1330,7 +1329,6 @@ export default function OutreachApp() {
                   <button
                     className={`${styles.actionBtn} ${styles.deadBtn}`}
                     onClick={() => handleAction('dead', 'Wrong role')}
-                    disabled={actionLoading}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     Wrong role
@@ -1340,7 +1338,6 @@ export default function OutreachApp() {
                 <button
                   className={`${styles.actionBtn} ${styles.deadBtn}`}
                   onClick={() => handleAction('dead')}
-                  disabled={actionLoading}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   Dead lead
