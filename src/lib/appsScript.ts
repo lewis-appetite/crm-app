@@ -18,6 +18,18 @@ export interface AppsScriptPayload {
   draft?: { to: string; subject: string; body: string; threadId?: string };
   gmailSearch?: { targetEmail: string; companyDomain?: string };
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
+  experiment?: {
+    testId: string;
+    name?: string;
+    stage?: string;
+    variantA?: string;
+    variantB?: string;
+    status?: string;
+    started?: string;
+    ended?: string;
+    winner?: string;
+    notes?: string;
+  };
 }
 
 export async function postToAppsScript(payload: AppsScriptPayload): Promise<unknown> {

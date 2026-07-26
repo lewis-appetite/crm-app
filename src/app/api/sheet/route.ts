@@ -4,6 +4,8 @@ import {
   parseMessages,
   parseActivity,
   parseCampaigns,
+  parseExperiments,
+  computeExperimentResults,
   getFollowUpQueue,
   getNewContactsQueue,
   getFocusQueue,
@@ -21,11 +23,12 @@ const HOT_TOUCH_DAYS = parseInt(process.env.HOT_TOUCH_DAYS || '2');
 
 export async function GET() {
   try {
-    const [connectionRows, messageRows, activityRows, campaignRows] = await Promise.all([
+    const [connectionRows, messageRows, activityRows, campaignRows, experimentRows] = await Promise.all([
       fetchSheetRange('Connections'),
       fetchSheetRange('Messages'),
       fetchSheetRange('Activity').catch(() => [] as string[][]),
       fetchSheetRange('Campaigns').catch(() => [] as string[][]),
+      fetchSheetRange('Experiments').catch(() => [] as string[][]),
     ]);
 
     const contacts = parseConnections(connectionRows);
@@ -33,6 +36,8 @@ export async function GET() {
     const messages = parseMessages(messageRows);
     const activity = parseActivity(activityRows);
     const campaigns = parseCampaigns(campaignRows);
+    const experiments = parseExperiments(experimentRows);
+    const experimentResults = experiments.map(e => computeExperimentResults(e, activity, contacts));
 
     const focusedCompanyKeys = new Set(campaigns.filter(c => c.focus).map(c => normalizeCompany(c.company)));
     const followUps = getFollowUpQueue(contacts, INTERVAL, focusedCompanyKeys);
@@ -46,6 +51,8 @@ export async function GET() {
       newContacts,
       focus,
       focusSuggestions,
+      experiments,
+      experimentResults,
       messages,
       allContacts: contacts,
       activity,

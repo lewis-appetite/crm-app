@@ -237,6 +237,168 @@ export function parseMessages(rows: string[][]): Message[] {
   }));
 }
 
+// Experiments tab — header-driven like Campaigns/Connections: Test ID | Name |
+// Stage | Variant A | Variant B | Status | Started | Ended | Winner | Notes.
+// One Active test per stage at a time (enforced by the Tests screen, not the
+// sheet itself) - but Initial Message / Follow-up 1 / Follow-up 2 each run
+// independently, so up to three tests can be active simultaneously.
+const EXPERIMENTS_FIELD_HEADERS: Record<string, string> = {
+  testId: 'Test ID',
+  name: 'Name',
+  stage: 'Stage',
+  variantA: 'Variant A',
+  variantB: 'Variant B',
+  status: 'Status',
+  started: 'Started',
+  ended: 'Ended',
+  winner: 'Winner',
+  notes: 'Notes',
+};
+
+export function buildExperimentsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+  return buildColumnMap(headerRow, EXPERIMENTS_FIELD_HEADERS);
+}
+
+// Matches the app's existing new/followup1/followup2 action-type vocabulary
+// (see getFocusQueue, handleAction) rather than inventing new stage names.
+export type ExperimentStage = 'new' | 'followup1' | 'followup2';
+
+export const EXPERIMENT_STAGE_LABELS: Record<ExperimentStage, string> = {
+  new: 'Initial Message',
+  followup1: 'Follow-up 1',
+  followup2: 'Follow-up 2',
+};
+
+function normalizeStage(raw: string): ExperimentStage {
+  const s = raw.trim().toLowerCase();
+  if (s === 'followup1' || s === 'follow-up 1' || s === 'fu1') return 'followup1';
+  if (s === 'followup2' || s === 'follow-up 2' || s === 'fu2') return 'followup2';
+  return 'new';
+}
+
+export interface Experiment {
+  testId: string;
+  name: string;
+  stage: ExperimentStage;
+  variantA: string; // template abbreviation
+  variantB: string; // template abbreviation
+  status: string; // 'Active' | 'Completed' | ...
+  started: string; // DD/MM/YYYY
+  ended: string;
+  winner: string; // '' | 'A' | 'B' | 'No clear winner'
+  notes: string;
+}
+
+export function parseExperiments(rows: string[][]): Experiment[] {
+  const { index: col } = buildExperimentsColumnMap(rows[0] || []);
+  const get = (row: string[], key: string) => (row[col[key]] ?? '').trim();
+
+  return rows
+    .slice(1)
+    .map(row => ({
+      testId: get(row, 'testId'),
+      name: get(row, 'name'),
+      stage: normalizeStage(get(row, 'stage')),
+      variantA: get(row, 'variantA'),
+      variantB: get(row, 'variantB'),
+      status: get(row, 'status'),
+      started: get(row, 'started'),
+      ended: get(row, 'ended'),
+      winner: get(row, 'winner'),
+      notes: get(row, 'notes'),
+    }))
+    .filter(e => e.testId);
+}
+
+export function isExperimentActive(e: Experiment): boolean {
+  return e.status.trim().toLowerCase() === 'active';
+}
+
+export function getActiveExperiment(experiments: Experiment[], stage: ExperimentStage): Experiment | null {
+  return experiments.find(e => e.stage === stage && isExperimentActive(e)) ?? null;
+}
+
+// Deterministic hash of (rowIndex, testId) so the same contact always lands
+// on the same variant for a given test - nothing needs to be written or
+// tracked per-contact. Deliberately not rowIndex % 2: sheet position
+// correlates with import batch/company/region and would confound results.
+export function assignVariant(rowIndex: number, testId: string): 'A' | 'B' {
+  const str = `${rowIndex}:${testId}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return (hash & 1) === 0 ? 'A' : 'B';
+}
+
+export function assignedTemplate(e: Experiment, rowIndex: number): string {
+  return assignVariant(rowIndex, e.testId) === 'A' ? e.variantA : e.variantB;
+}
+
+export interface ExperimentVariantStats {
+  variant: 'A' | 'B';
+  template: string;
+  sent: number;
+  eligible: number; // subset old enough (or already replied) to fairly count toward the rate
+  replied: number;
+  rate: number | null; // null until eligible sample clears MIN_SAMPLE_PER_VARIANT - "too early to call"
+}
+
+export interface ExperimentResults {
+  testId: string;
+  a: ExperimentVariantStats;
+  b: ExperimentVariantStats;
+}
+
+const MIN_SAMPLE_PER_VARIANT = 20;
+
+// Driven off the Activity log (timestamped, per-send) rather than current
+// sheet state, filtered to the test's date window - so pre-existing use of
+// the same templates before the test started never gets miscounted in.
+export function computeExperimentResults(
+  experiment: Experiment,
+  activity: ActivityEvent[],
+  contacts: Contact[]
+): ExperimentResults {
+  const contactByRow = new Map(contacts.map(c => [c.rowIndex, c]));
+  const startDate = parseDate(experiment.started);
+  const endDate = experiment.ended ? parseDate(experiment.ended) : null;
+
+  function statsFor(variant: 'A' | 'B', template: string): ExperimentVariantStats {
+    // Dedup by rowIndex - a contact only counts once per variant even if
+    // touched at this stage more than once during the test window
+    const rowIndexes = new Set<number>();
+    activity.forEach(a => {
+      if (a.action !== experiment.stage) return;
+      if (!template || normAbbr(a.template) !== normAbbr(template)) return;
+      const d = parseDate(a.date);
+      if (!d) return;
+      if (startDate && d.getTime() < startDate.getTime()) return;
+      if (endDate && d.getTime() > endDate.getTime()) return;
+      rowIndexes.add(a.rowIndex);
+    });
+
+    let eligible = 0;
+    let replied = 0;
+    rowIndexes.forEach(rowIndex => {
+      const c = contactByRow.get(rowIndex);
+      if (!c || !countsForReplyRate(c)) return;
+      eligible++;
+      if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) replied++;
+    });
+
+    const sent = rowIndexes.size;
+    const rate = eligible >= MIN_SAMPLE_PER_VARIANT ? Math.round((replied / eligible) * 100) : null;
+    return { variant, template, sent, eligible, replied, rate };
+  }
+
+  return {
+    testId: experiment.testId,
+    a: statsFor('A', experiment.variantA),
+    b: statsFor('B', experiment.variantB),
+  };
+}
+
 // 'referred' means the contact pointed us elsewhere, not that they're
 // personally interested — excluded from positive-reply stats and follow-ups
 export const POSITIVE_REPLIES = ['interested', 'yes'];

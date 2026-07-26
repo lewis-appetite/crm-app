@@ -95,6 +95,57 @@ function doPost(e) {
     }
   }
 
+  // Upsert-by-Test-ID, same pattern as the campaign block above. The client
+  // generates testId (create) or passes an existing one (update/end) -
+  // header-driven so the Experiments tab can be reorganized freely.
+  if (body.experiment) {
+    var expSheet = ss.getSheetByName('Experiments');
+    if (expSheet) {
+      var testIdColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Test ID');
+      var nameColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Name');
+      var stageColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Stage');
+      var variantAColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Variant A');
+      var variantBColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Variant B');
+      var expStatusColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Status');
+      var startedColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Started');
+      var endedColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Ended');
+      var winnerColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Winner');
+      var expNotesColIdx = sheetHeaderIndexOrAppend_('Experiments', 'Notes');
+
+      var expRows = expSheet.getDataRange().getValues();
+      var expTarget = String(body.experiment.testId).trim().toLowerCase();
+      var expFound = false;
+      for (var j = 1; j < expRows.length; j++) {
+        if (String(expRows[j][testIdColIdx - 1]).trim().toLowerCase() === expTarget) {
+          if (body.experiment.name !== undefined) expSheet.getRange(j + 1, nameColIdx).setValue(body.experiment.name);
+          if (body.experiment.stage !== undefined) expSheet.getRange(j + 1, stageColIdx).setValue(body.experiment.stage);
+          if (body.experiment.variantA !== undefined) expSheet.getRange(j + 1, variantAColIdx).setValue(body.experiment.variantA);
+          if (body.experiment.variantB !== undefined) expSheet.getRange(j + 1, variantBColIdx).setValue(body.experiment.variantB);
+          if (body.experiment.status !== undefined) expSheet.getRange(j + 1, expStatusColIdx).setValue(body.experiment.status);
+          if (body.experiment.started !== undefined) expSheet.getRange(j + 1, startedColIdx).setValue(body.experiment.started);
+          if (body.experiment.ended !== undefined) expSheet.getRange(j + 1, endedColIdx).setValue(body.experiment.ended);
+          if (body.experiment.winner !== undefined) expSheet.getRange(j + 1, winnerColIdx).setValue(body.experiment.winner);
+          if (body.experiment.notes !== undefined) expSheet.getRange(j + 1, expNotesColIdx).setValue(body.experiment.notes);
+          expFound = true;
+          break;
+        }
+      }
+      if (!expFound) {
+        var expNewRow = expSheet.getLastRow() + 1;
+        expSheet.getRange(expNewRow, testIdColIdx).setValue(body.experiment.testId);
+        if (body.experiment.name !== undefined) expSheet.getRange(expNewRow, nameColIdx).setValue(body.experiment.name);
+        if (body.experiment.stage !== undefined) expSheet.getRange(expNewRow, stageColIdx).setValue(body.experiment.stage);
+        if (body.experiment.variantA !== undefined) expSheet.getRange(expNewRow, variantAColIdx).setValue(body.experiment.variantA);
+        if (body.experiment.variantB !== undefined) expSheet.getRange(expNewRow, variantBColIdx).setValue(body.experiment.variantB);
+        if (body.experiment.status !== undefined) expSheet.getRange(expNewRow, expStatusColIdx).setValue(body.experiment.status);
+        if (body.experiment.started !== undefined) expSheet.getRange(expNewRow, startedColIdx).setValue(body.experiment.started);
+        if (body.experiment.ended !== undefined) expSheet.getRange(expNewRow, endedColIdx).setValue(body.experiment.ended);
+        if (body.experiment.winner !== undefined) expSheet.getRange(expNewRow, winnerColIdx).setValue(body.experiment.winner);
+        if (body.experiment.notes !== undefined) expSheet.getRange(expNewRow, expNotesColIdx).setValue(body.experiment.notes);
+      }
+    }
+  }
+
   var draftMode = null;
   var draftReplyError = null;
   if (body.draft && body.draft.to) {

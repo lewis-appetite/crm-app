@@ -7,12 +7,15 @@ import {
   getMessageStats, normAbbr,
   getStats, Stats, CAMPAIGN_STAGES,
   getRegionMode, regionSortRank,
+  Experiment, ExperimentResults, ExperimentStage,
+  getActiveExperiment, assignedTemplate, assignVariant,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
 import MessagesTab from './tabs/MessagesTab';
 import ConnectionsTab from './tabs/ConnectionsTab';
 import FocusTab from './tabs/FocusTab';
+import TestsTab from './tabs/TestsTab';
 
 interface CakeImage {
   name: string;
@@ -30,6 +33,8 @@ interface SheetData {
   newContacts: Contact[];
   focus: CompanyGroup[];
   focusSuggestions: string[];
+  experiments: Experiment[];
+  experimentResults: ExperimentResults[];
   messages: Message[];
   allContacts: Contact[];
   activity: ActivityEvent[];
@@ -39,10 +44,11 @@ interface SheetData {
   dailyNewGoal: number;
 }
 
-type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats';
+type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests';
 const MORE_TABS: { tab: Tab; label: string }[] = [
   { tab: 'messages', label: 'Messages' },
   { tab: 'cake', label: 'Cake' },
+  { tab: 'tests', label: 'Tests' },
   { tab: 'stats', label: 'Stats' },
 ];
 
@@ -61,6 +67,18 @@ interface UpdateBody {
     detail: string;
   };
   campaign?: { company: string; status?: string; notes?: string; focus?: boolean };
+  experiment?: {
+    testId: string;
+    name?: string;
+    stage?: string;
+    variantA?: string;
+    variantB?: string;
+    status?: string;
+    started?: string;
+    ended?: string;
+    winner?: string;
+    notes?: string;
+  };
 }
 
 async function postUpdate(payload: UpdateBody): Promise<boolean> {
@@ -286,11 +304,22 @@ export default function OutreachApp() {
       });
   })();
 
+  function followUpStageKey(c: Contact): ExperimentStage {
+    return !c.followUpMessage1 ? 'followup1' : 'followup2';
+  }
+
   // Follow-ups arrive pre-sorted by cadence priority (server-side); a stable
-  // sort layers region preference on top without disturbing that ordering
-  // for contacts in the same region bucket
+  // sort layers two things on top without disturbing that ordering within
+  // each bucket: contacts due at a stage with an active A/B test are pinned
+  // first (so they're not buried in the general queue), then region
+  // preference for the current time-of-day window
   const sortedFollowUps = data
-    ? [...data.followUps].sort((a, b) => regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode))
+    ? [...data.followUps].sort((a, b) => {
+        const aPinned = getActiveExperiment(data.experiments, followUpStageKey(a)) ? 0 : 1;
+        const bPinned = getActiveExperiment(data.experiments, followUpStageKey(b)) ? 0 : 1;
+        if (aPinned !== bPinned) return aPinned - bPinned;
+        return regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode);
+      })
     : [];
 
   const queue = data
@@ -328,15 +357,43 @@ export default function OutreachApp() {
   const safeIndex = Math.min(index, Math.max(0, queue.length - 1));
   const contact = queue[safeIndex] ?? null;
 
-  const suggestion: SuggestedMessage | null =
-    contact && data
-      ? suggestMessage(contact, data.allContacts, data.messages, tab === 'followup')
-      : null;
-
   const followUpStage = tab !== 'followup' ? 0
     : !contact?.followUpMessage1 ? 1
     : !contact?.followUpMessage2 ? 2
     : 3;
+
+  // Active A/B test (if any) for whichever stage the current card is at -
+  // up to three can run at once (new/followup1/followup2 independently)
+  const currentStageKey: ExperimentStage | null =
+    tab === 'new' ? 'new' : tab === 'followup' && followUpStage === 1 ? 'followup1' : tab === 'followup' && followUpStage === 2 ? 'followup2' : null;
+  const activeExperiment = currentStageKey && data ? getActiveExperiment(data.experiments, currentStageKey) : null;
+
+  const baseSuggestion: SuggestedMessage | null =
+    contact && data
+      ? suggestMessage(contact, data.allContacts, data.messages, tab === 'followup')
+      : null;
+
+  // Overrides the normal reply-rate-based suggestion with this contact's
+  // assigned variant, so running a test doesn't just add another option -
+  // it becomes the default, same as Lewis would send by hand
+  const testVariantAbbr = activeExperiment && contact ? assignedTemplate(activeExperiment, contact.rowIndex) : null;
+  const testVariantMessage = testVariantAbbr
+    ? data?.messages.find(m => normAbbr(m.abbreviation) === normAbbr(testVariantAbbr)) ?? null
+    : null;
+  const testVariantResult = activeExperiment ? data?.experimentResults.find(r => r.testId === activeExperiment.testId) ?? null : null;
+  const testVariantStats = testVariantResult && testVariantAbbr
+    ? (normAbbr(testVariantResult.a.template) === normAbbr(testVariantAbbr) ? testVariantResult.a : testVariantResult.b)
+    : null;
+
+  const suggestion: SuggestedMessage | null = testVariantMessage
+    ? {
+        abbreviation: testVariantMessage.abbreviation,
+        fullMessage: testVariantMessage.fullMessage,
+        replyRate: testVariantStats?.rate ?? null,
+        sentCount: testVariantStats?.sent ?? 0,
+        repliedCount: testVariantStats?.replied ?? 0,
+      }
+    : baseSuggestion;
 
   const messageOptions = data?.messages.filter(m =>
     tab === 'new'
@@ -377,6 +434,52 @@ export default function OutreachApp() {
     const payload: UpdateBody = { campaign: { company, ...updates } };
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
+  }
+
+  async function handleCreateExperiment(params: { name: string; stage: ExperimentStage; variantA: string; variantB: string }) {
+    const testId = `test-${Date.now()}`;
+    const newExperiment: Experiment = {
+      testId,
+      name: params.name,
+      stage: params.stage,
+      variantA: params.variantA,
+      variantB: params.variantB,
+      status: 'Active',
+      started: todayDMY(),
+      ended: '',
+      winner: '',
+      notes: '',
+    };
+    setData(prev => (prev ? { ...prev, experiments: [...prev.experiments, newExperiment] } : prev));
+    const payload: UpdateBody = {
+      experiment: {
+        testId,
+        name: params.name,
+        stage: params.stage,
+        variantA: params.variantA,
+        variantB: params.variantB,
+        status: 'Active',
+        started: newExperiment.started,
+      },
+    };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
+    await silentRefresh();
+  }
+
+  async function handleEndExperiment(testId: string, winner: string) {
+    const ended = todayDMY();
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        experiments: prev.experiments.map(e => (e.testId === testId ? { ...e, status: 'Completed', ended, winner } : e)),
+      };
+    });
+    const payload: UpdateBody = { experiment: { testId, status: 'Completed', ended, winner } };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
+    await silentRefresh();
   }
 
   async function retryFailedWrites() {
@@ -1053,6 +1156,17 @@ export default function OutreachApp() {
           <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} />
         )
 
+        /* ── TESTS TAB ── */
+        : tab === 'tests' ? (
+          <TestsTab
+            experiments={data?.experiments ?? []}
+            results={data?.experimentResults ?? []}
+            messages={data?.messages ?? []}
+            onCreate={handleCreateExperiment}
+            onEnd={handleEndExperiment}
+          />
+        )
+
         /* ── FOCUS TAB ── */
         : tab === 'focus' ? (
           <FocusTab
@@ -1290,6 +1404,11 @@ export default function OutreachApp() {
             {/* Message suggestion */}
             {suggestion ? (
               <div className={styles.msgCard}>
+                {activeExperiment && testVariantMessage && (
+                  <span className={styles.testBadge}>
+                    🧪 {activeExperiment.name} — Variant {assignVariant(contact!.rowIndex, activeExperiment.testId)}
+                  </span>
+                )}
                 <div className={styles.msgHeader}>
                   <span className={styles.msgLabel}>Suggested message</span>
                   <div className={styles.msgMeta}>

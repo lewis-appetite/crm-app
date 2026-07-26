@@ -1075,6 +1075,101 @@
   gap: 12px;
 }
 
+.testsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.testsSectionLabel {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+.testCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.testCardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.testCardName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.testCardStage {
+  margin-left: auto;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.testVariantRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.testVariantLabel {
+  font-family: 'DM Mono', monospace;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.testVariantTemplate {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.testVariantStat {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.testCardMeta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.testBadge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(232, 213, 176, 0.3);
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
 .statsCard {
   background: var(--surface);
   border: 1px solid var(--border);
