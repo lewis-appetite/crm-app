@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Contact, daysAgo, POSITIVE_REPLIES } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
-const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Wrong location', 'Wrong role', 'Not interested', 'Blocked', 'Gone cold'];
+const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Wrong location', 'Wrong role', 'Wrong business', 'Not interested', 'Blocked', 'Gone cold'];
 
 interface Props {
   allContacts: Contact[];
