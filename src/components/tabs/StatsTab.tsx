@@ -29,9 +29,8 @@ function RateRow({
       <span className={styles.ratePct}>
         {stage.rate !== null ? `${stage.rate}%` : '—'}
       </span>
-      <span className={styles.rateSent}>
+      <span className={styles.rateSent} title={`${stage.replied} replied / ${stage.eligible} eligible (7+ days or already replied)`}>
         {stage.sent} sent
-        <span className={styles.replyBreakdownSub}>{stage.eligible} elig.</span>
       </span>
       <svg className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="6 9 12 15 18 9"/>
@@ -157,10 +156,7 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
                     {breakdownByStage(key).map(row => (
                       <div key={row.template} className={styles.replyBreakdownRow}>
                         <span className={styles.replyBreakdownTemplate}>{row.template}</span>
-                        <span className={styles.replyBreakdownStat}>
-                          {row.sent}
-                          <span className={styles.replyBreakdownSub}>{row.eligible} elig.</span>
-                        </span>
+                        <span className={styles.replyBreakdownStat}>{row.sent}</span>
                         <span className={styles.replyBreakdownStat}>
                           {row.replyRate !== null ? `${row.replyRate}%` : '—'} <span className={styles.rateSent}>({row.replied}/{row.eligible})</span>
                         </span>
