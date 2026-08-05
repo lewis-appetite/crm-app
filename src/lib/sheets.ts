@@ -937,9 +937,10 @@ export interface WeekBucket {
 }
 
 export interface StageRate {
-  sent: number;
+  sent: number; // raw total ever sent at this stage - matches what you'd count by eye in the sheet
+  eligible: number; // subset sent 7+ days ago (or already replied) - the fair denominator for rate
   replied: number;
-  rate: number | null;
+  rate: number | null; // replied / eligible
 }
 
 export interface Stats {
@@ -1063,27 +1064,47 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
   const thisWeek = buckets[5];
   const lastWeek = buckets[4];
 
-  // Reply rates by stage
-  const stages = { initialMessage: { sent: 0, replied: 0 }, firstFollowUp: { sent: 0, replied: 0 }, secondFollowUp: { sent: 0, replied: 0 } };
+  // Reply rates by stage - each stage is checked independently, not as an
+  // if/else-if chain on "latest stage reached". A contact who's progressed
+  // to FU2 still had an initial message and an FU1 sent; excluding them from
+  // those counts (the previous bug here) undercounted every stage except
+  // whichever one each contact happened to be sitting at right now.
+  const stages = {
+    initialMessage: { sent: 0, eligible: 0, replied: 0 },
+    firstFollowUp: { sent: 0, eligible: 0, replied: 0 },
+    secondFollowUp: { sent: 0, eligible: 0, replied: 0 },
+  };
   contacts.forEach(c => {
-    if (!c.message) return;
-    if (!countsForReplyRate(c)) return;
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
+    const eligible = countsForReplyRate(c);
+    if (c.message) {
+      stages.initialMessage.sent++;
+      if (eligible) {
+        stages.initialMessage.eligible++;
+        if (isPositive) stages.initialMessage.replied++;
+      }
+    }
+    if (c.followUpMessage1) {
+      stages.firstFollowUp.sent++;
+      if (eligible) {
+        stages.firstFollowUp.eligible++;
+        if (isPositive) stages.firstFollowUp.replied++;
+      }
+    }
     if (c.followUpMessage2) {
       stages.secondFollowUp.sent++;
-      if (isPositive) stages.secondFollowUp.replied++;
-    } else if (c.followUpMessage1) {
-      stages.firstFollowUp.sent++;
-      if (isPositive) stages.firstFollowUp.replied++;
-    } else {
-      stages.initialMessage.sent++;
-      if (isPositive) stages.initialMessage.replied++;
+      if (eligible) {
+        stages.secondFollowUp.eligible++;
+        if (isPositive) stages.secondFollowUp.replied++;
+      }
     }
   });
 
-  const toRate = (s: { sent: number; replied: number }): StageRate => ({
-    ...s,
-    rate: s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
+  const toRate = (s: { sent: number; eligible: number; replied: number }): StageRate => ({
+    sent: s.sent,
+    eligible: s.eligible,
+    replied: s.replied,
+    rate: s.eligible >= 2 ? Math.round((s.replied / s.eligible) * 100) : null,
   });
 
   return {

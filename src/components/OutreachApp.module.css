@@ -1394,7 +1394,7 @@
   font-family: 'DM Mono', monospace;
   font-size: 10px;
   color: var(--text-dim);
-  width: 36px;
+  width: 52px;
   text-align: right;
   flex-shrink: 0;
 }
@@ -1406,7 +1406,7 @@
 
 .replyBreakdownHeader {
   display: grid;
-  grid-template-columns: 1fr 90px 90px;
+  grid-template-columns: 1fr 44px 90px 90px;
   gap: 8px;
   font-size: 10px;
   text-transform: uppercase;
@@ -1417,7 +1417,7 @@
 
 .replyBreakdownRow {
   display: grid;
-  grid-template-columns: 1fr 90px 90px;
+  grid-template-columns: 1fr 44px 90px 90px;
   gap: 8px;
   padding: 5px 0;
   font-size: 12px;

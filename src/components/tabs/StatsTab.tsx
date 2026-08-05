@@ -14,7 +14,7 @@ function RateRow({
   label, stage, stageKey, expanded, onToggle,
 }: {
   label: string;
-  stage: { sent: number; replied: number; rate: number | null };
+  stage: { sent: number; eligible: number; replied: number; rate: number | null };
   stageKey: ExperimentStage;
   expanded: boolean;
   onToggle: (key: ExperimentStage) => void;
@@ -29,19 +29,15 @@ function RateRow({
       <span className={styles.ratePct}>
         {stage.rate !== null ? `${stage.rate}%` : '—'}
       </span>
-      <span className={styles.rateSent}>{stage.replied}/{stage.sent}</span>
+      <span className={styles.rateSent} title={`${stage.replied} replied / ${stage.eligible} eligible (7+ days or already replied)`}>
+        {stage.sent} sent
+      </span>
       <svg className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
   );
 }
-
-const STAGE_LABELS: Record<ExperimentStage, string> = {
-  new: 'Initial message',
-  followup1: '1st follow-up',
-  followup2: '2nd follow-up',
-};
 
 export default function StatsTab({ stats, allContacts }: { stats: Stats; allContacts: Contact[] }) {
   const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
@@ -136,7 +132,7 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
           ['new', 'Initial message', replyRates.initialMessage],
           ['followup1', '1st follow-up', replyRates.firstFollowUp],
           ['followup2', '2nd follow-up', replyRates.secondFollowUp],
-        ] as [ExperimentStage, string, { sent: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
+        ] as [ExperimentStage, string, { sent: number; eligible: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
           <div key={key}>
             <RateRow
               label={label}
@@ -153,12 +149,14 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
                   <>
                     <div className={styles.replyBreakdownHeader}>
                       <span>Template</span>
+                      <span>Sent</span>
                       <span>Reply %</span>
                       <span>Positive %</span>
                     </div>
                     {breakdownByStage(key).map(row => (
                       <div key={row.template} className={styles.replyBreakdownRow}>
                         <span className={styles.replyBreakdownTemplate}>{row.template}</span>
+                        <span className={styles.replyBreakdownStat}>{row.sent}</span>
                         <span className={styles.replyBreakdownStat}>
                           {row.replyRate !== null ? `${row.replyRate}%` : '—'} <span className={styles.rateSent}>({row.replied}/{row.eligible})</span>
                         </span>
