@@ -1344,6 +1344,15 @@
   gap: 8px;
   padding: 7px 0;
   border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+  width: 100%;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
 }
 
 .rateRow:last-child {
@@ -1388,6 +1397,43 @@
   width: 36px;
   text-align: right;
   flex-shrink: 0;
+}
+
+.replyBreakdown {
+  padding: 8px 0 4px 4px;
+  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+}
+
+.replyBreakdownHeader {
+  display: grid;
+  grid-template-columns: 1fr 90px 90px;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  padding-bottom: 4px;
+}
+
+.replyBreakdownRow {
+  display: grid;
+  grid-template-columns: 1fr 90px 90px;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+
+.replyBreakdownTemplate {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyBreakdownStat {
+  font-family: 'DM Mono', monospace;
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 /* ── Goal bar ── */

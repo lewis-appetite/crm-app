@@ -858,6 +858,63 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
   });
 }
 
+// Positive replies count Interested/Yes/Referred/Opportunity - deliberately
+// broader than the app-wide POSITIVE_REPLIES constant (Interested/Yes only,
+// used for follow-up-cadence/Tier-2 gating). This is a reporting split only,
+// scoped to this breakdown, not a change to how those contacts are treated
+// elsewhere in the app.
+const REPLY_BREAKDOWN_POSITIVE = ['interested', 'yes', 'referred', 'opportunity'];
+// "Did they reply at all" - excludes Blocked and the disqualification-only
+// values (Dead lead/Wrong location/Wrong role/Wrong business), since those
+// are the sender's own call, not something the contact said.
+const REPLY_BREAKDOWN_ANY = [...REPLY_BREAKDOWN_POSITIVE, 'not interested', 'gone cold'];
+
+export interface ReplyBreakdownRow {
+  stage: ExperimentStage;
+  template: string;
+  sent: number;
+  eligible: number;
+  replied: number; // any-reply count among eligible
+  positive: number; // positive-reply count among eligible
+  replyRate: number | null; // replied / eligible, null under min sample
+  positiveRate: number | null; // positive / eligible, null under min sample
+}
+
+// Per-template, per-stage reply/positive-reply rates - same "eligible 7+ days
+// or already replied" gating as getMessageStats, just split by stage
+// (new/followup1/followup2) instead of merged into one "Follow Up" bucket,
+// since a template can be used at either follow-up stage.
+export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
+  const groups = new Map<string, { stage: ExperimentStage; template: string; sent: number; eligible: number; replied: number; positive: number }>();
+
+  function record(stage: ExperimentStage, templateRaw: string, c: Contact) {
+    if (!templateRaw) return;
+    const key = `${stage}|${normAbbr(templateRaw)}`;
+    if (!groups.has(key)) groups.set(key, { stage, template: templateRaw, sent: 0, eligible: 0, replied: 0, positive: 0 });
+    const g = groups.get(key)!;
+    g.sent++;
+    if (!countsForReplyRate(c)) return;
+    g.eligible++;
+    const r = c.reply.toLowerCase();
+    if (REPLY_BREAKDOWN_ANY.includes(r)) g.replied++;
+    if (REPLY_BREAKDOWN_POSITIVE.includes(r)) g.positive++;
+  }
+
+  contacts.forEach(c => {
+    if (c.message) record('new', c.message, c);
+    if (c.followUpMessage1) record('followup1', c.followUpMessage1, c);
+    if (c.followUpMessage2) record('followup2', c.followUpMessage2, c);
+  });
+
+  return Array.from(groups.values())
+    .map(g => ({
+      ...g,
+      replyRate: g.eligible >= 2 ? Math.round((g.replied / g.eligible) * 100) : null,
+      positiveRate: g.eligible >= 2 ? Math.round((g.positive / g.eligible) * 100) : null,
+    }))
+    .sort((a, b) => (b.replyRate ?? -1) - (a.replyRate ?? -1));
+}
+
 export function todayDMY(): string {
   const d = new Date();
   const day = String(d.getDate()).padStart(2, '0');

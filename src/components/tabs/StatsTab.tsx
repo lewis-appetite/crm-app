@@ -1,6 +1,7 @@
 'use client';
 
-import { Stats } from '@/lib/sheets';
+import { useState } from 'react';
+import { Stats, Contact, ExperimentStage, getReplyBreakdown } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 function delta(a: number, b: number) {
@@ -9,10 +10,18 @@ function delta(a: number, b: number) {
   return { value: Math.abs(d), positive: d > 0 };
 }
 
-function RateRow({ label, stage }: { label: string; stage: { sent: number; replied: number; rate: number | null } }) {
+function RateRow({
+  label, stage, stageKey, expanded, onToggle,
+}: {
+  label: string;
+  stage: { sent: number; replied: number; rate: number | null };
+  stageKey: ExperimentStage;
+  expanded: boolean;
+  onToggle: (key: ExperimentStage) => void;
+}) {
   const pct = stage.rate ?? 0;
   return (
-    <div className={styles.rateRow}>
+    <button className={styles.rateRow} onClick={() => onToggle(stageKey)}>
       <span className={styles.rateLabel}>{label}</span>
       <div className={styles.rateBarWrap}>
         <div className={styles.rateBarFill} style={{ width: `${Math.min(pct, 100)}%` }} />
@@ -21,13 +30,26 @@ function RateRow({ label, stage }: { label: string; stage: { sent: number; repli
         {stage.rate !== null ? `${stage.rate}%` : '—'}
       </span>
       <span className={styles.rateSent}>{stage.replied}/{stage.sent}</span>
-    </div>
+      <svg className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
   );
 }
 
-export default function StatsTab({ stats }: { stats: Stats }) {
+const STAGE_LABELS: Record<ExperimentStage, string> = {
+  new: 'Initial message',
+  followup1: '1st follow-up',
+  followup2: '2nd follow-up',
+};
+
+export default function StatsTab({ stats, allContacts }: { stats: Stats; allContacts: Contact[] }) {
   const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
   const maxBar = Math.max(...sixWeeks.map(w => w.total), 1);
+  const [expandedStage, setExpandedStage] = useState<ExperimentStage | null>(null);
+
+  const breakdown = getReplyBreakdown(allContacts);
+  const breakdownByStage = (stage: ExperimentStage) => breakdown.filter(r => r.stage === stage);
 
   return (
     <div className={styles.statsPage}>
@@ -110,9 +132,47 @@ export default function StatsTab({ stats }: { stats: Stats }) {
       {/* Reply rates by stage */}
       <div className={styles.statsCard}>
         <div className={styles.statsCardTitle}>Reply rates by stage</div>
-        <RateRow label="Initial message" stage={replyRates.initialMessage} />
-        <RateRow label="1st follow-up" stage={replyRates.firstFollowUp} />
-        <RateRow label="2nd follow-up" stage={replyRates.secondFollowUp} />
+        {([
+          ['new', 'Initial message', replyRates.initialMessage],
+          ['followup1', '1st follow-up', replyRates.firstFollowUp],
+          ['followup2', '2nd follow-up', replyRates.secondFollowUp],
+        ] as [ExperimentStage, string, { sent: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
+          <div key={key}>
+            <RateRow
+              label={label}
+              stage={stage}
+              stageKey={key}
+              expanded={expandedStage === key}
+              onToggle={k => setExpandedStage(cur => (cur === k ? null : k))}
+            />
+            {expandedStage === key && (
+              <div className={styles.replyBreakdown}>
+                {breakdownByStage(key).length === 0 ? (
+                  <span className={styles.manageEmpty}>No sends yet at this stage</span>
+                ) : (
+                  <>
+                    <div className={styles.replyBreakdownHeader}>
+                      <span>Template</span>
+                      <span>Reply %</span>
+                      <span>Positive %</span>
+                    </div>
+                    {breakdownByStage(key).map(row => (
+                      <div key={row.template} className={styles.replyBreakdownRow}>
+                        <span className={styles.replyBreakdownTemplate}>{row.template}</span>
+                        <span className={styles.replyBreakdownStat}>
+                          {row.replyRate !== null ? `${row.replyRate}%` : '—'} <span className={styles.rateSent}>({row.replied}/{row.eligible})</span>
+                        </span>
+                        <span className={styles.replyBreakdownStat}>
+                          {row.positiveRate !== null ? `${row.positiveRate}%` : '—'} <span className={styles.rateSent}>({row.positive}/{row.eligible})</span>
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
     </div>

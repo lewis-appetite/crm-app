@@ -1132,7 +1132,7 @@ export default function OutreachApp() {
 
         /* ── STATS TAB ── */
         : tab === 'stats' ? (
-          stats ? <StatsTab stats={stats} /> : null
+          stats ? <StatsTab stats={stats} allContacts={data?.allContacts ?? []} /> : null
         )
 
         /* ── ALL CONTACTS TAB ── */
