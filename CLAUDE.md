@@ -83,6 +83,18 @@ Not every row is a real campaign — the firmographic/ICP fields let signal from
 
 `isCampaignActive` (`src/lib/sheets.ts`) is a strict **allowlist** (status contains delivered/reply/meeting/pipeline/"cake sent") — deliberately not "anything not closed/planned", because blank-Status ICP rows must default to inactive or they'd silently get pulled into Focus's Tier 1 cake-chase cadence. `isCampaignClosed`/`isCampaignPlanned` still keyword-match as before. Focus tab membership is separately gated by the `Focus` flag (see below), so ICP-only and non-shortlisted rows never appear there either. Managed from the Focus tab's "Manage shortlist" panel (stage dropdown + Focus toggle per company).
 
+### Prospects tab (pre-contact pipeline)
+
+Header-driven like the others (`PROSPECTS_FIELD_HEADERS`/`parseProspects`). **One row per contact**, company fields repeated — matching the shape the ICP research step emits (same as Connections). Headers: `Company | Industry | Company Size | Funding Stage | Location | Contact Name | Position | LinkedIn URL | Status | Rejection Reason | Address | Address Confirmed By | Date Added | Date Reviewed`.
+
+Deliberately **separate from Campaigns**: Campaigns is companies actually caked or genuinely interested (and is the dataset used to refine ICP), Prospects is everything before first contact. A prospect **graduates into Campaigns** at `Delivered` when the cake is sent, and is marked `Graduated` so it's never tracked in both places.
+
+Status lifecycle: `Pending` → `Approved` → `Ready to send` (set automatically once both Address and Address Confirmed By are filled) → `Graduated`. Plus `Rejected` with a reason from `PROSPECT_REJECTION_REASONS`.
+
+Approve/reject is a **company-level** judgement, so the Apps Script `prospect` handler updates every contact row matching that company, not a single row. `groupProspects` (`sheets.ts`) collapses contact rows into `ProspectCompany` objects for the UI and flags overlap with existing data (`inConnections`/`inCampaigns`/`knownContactCount`) — at 3,000+ contacts, research will resurface people already in the CRM, so these are surfaced as badges rather than auto-rejected (an existing connection at a new-to-you company is still useful).
+
+Address hunting is manual and deliberately excluded from the research step.
+
 ## Key Logic (`src/lib/sheets.ts`)
 
 **Today queue** (`getTodayQueue`) — two cadence-based tiers, grouped by company, excluding dead contacts, snoozed contacts, and anyone with Call booked set:
@@ -133,7 +145,7 @@ Writes go through the Apps Script web app — the API key is read-only. The key 
 
 Top-level: **Follow-ups** (contacts due for re-engagement, one card at a time) / **New** (untouched connections; cake-image matches sort first with inline preview) / **Focus** (manual company shortlist + auto-suggest, see Key Logic) / **All** (searchable/filterable list of every contact with inline editing).
 
-Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_TABS` in `OutreachApp.tsx`): **Messages** (template library with reply rates, card/table views) / **Cake** (copyable ChatGPT prompt + Drive template link) / **Tests** (A/B test creation + results, see In-progress plan below) / **Stats** (today count, streak, week-on-week bar chart, reply rates by stage).
+Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_TABS` in `OutreachApp.tsx`): **Prospects** (review queue for ICP-researched companies + approved working list, see Prospects tab above) / **Messages** (template library with reply rates, card/table views) / **Cake** (copyable ChatGPT prompt + Drive template link) / **Tests** (A/B test creation + results, see In-progress plan below) / **Stats** (today count, streak, week-on-week bar chart, reply rates by stage).
 
 ## Gamification (goal: 25 new + all due follow-ups daily)
 
@@ -185,6 +197,7 @@ User asked for a larger restructure (2026-07-25 onward). Status per piece, so a 
   - Volume reality at last check (2026-07-26): initial-message pool huge (can conclude in weeks). FU1 pool ~52 (smaller than expected — re-check before starting a test there). FU2 pool ~159 (better than earlier estimate). Always re-check live numbers before starting a test rather than trusting these.
 
 **Requires manual follow-up (not code):**
+- **Prospects tab needs to be created** in the spreadsheet, with header row `Company | Industry | Company Size | Funding Stage | Location | Contact Name | Position | LinkedIn URL | Status | Rejection Reason | Address | Address Confirmed By | Date Added | Date Reviewed` (any column order — header-driven). Until it exists the Prospects screen reads empty (the fetch is `.catch()`-guarded so it degrades gracefully rather than erroring) and writes no-op, since `getSheetByName('Prospects')` returns null.
 - **Campaigns tab needs a column header `Focus`** (TRUE/blank), anywhere in the row — position no longer matters now that it's header-driven. Until this header exists, every company parses as `focus: false` and the Focus tab will show empty/only auto-suggestions.
 - **Experiments tab needs to be created** in the spreadsheet, with header row `Test ID | Name | Stage | Variant A | Variant B | Status | Started | Ended | Winner | Notes` (any column order/position — header-driven). Until it exists, the Tests screen has nothing to read and test creation will silently append a new tab-less sheet on first write... actually will just fail since `getSheetByName('Experiments')` returns null — create the tab first.
 - **`apps-script/Code.gs` was updated again** (Experiments upsert-by-Test-ID handler, header-driven) — paste the latest version into the Apps Script editor and redeploy via **Manage deployments → edit the existing deployment → Version: New version → Deploy** (not "New deployment", which creates a different URL). Double-check the deployment you're editing is the one whose URL matches `GOOGLE_APPS_SCRIPT_URL` — this project previously had duplicate `doPost` functions across stray `.gs` files silently shadowing real changes; if edits still don't seem to take effect, check for that first.

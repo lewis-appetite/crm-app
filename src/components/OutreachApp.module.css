@@ -1158,6 +1158,72 @@
   color: var(--text-dim);
 }
 
+.prospectMeta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.prospectContacts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.prospectContact {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.prospectContactName {
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+a.prospectContactName {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+a.prospectContactName:hover {
+  text-decoration: underline;
+}
+
+.prospectContactRole {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospectFlag {
+  margin-left: auto;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  white-space: nowrap;
+}
+
+.prospectNote {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.prospectReasonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .testBadge {
   font-family: 'DM Mono', monospace;
   font-size: 10px;

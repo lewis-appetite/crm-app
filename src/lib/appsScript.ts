@@ -18,6 +18,14 @@ export interface AppsScriptPayload {
   draft?: { to: string; subject: string; body: string; threadId?: string };
   gmailSearch?: { targetEmail: string; companyDomain?: string };
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
+  prospect?: {
+    company: string; // applies to every row for this company
+    status?: string;
+    rejectionReason?: string;
+    address?: string;
+    addressConfirmedBy?: string;
+    dateReviewed?: string;
+  };
   experiment?: {
     testId: string;
     name?: string;

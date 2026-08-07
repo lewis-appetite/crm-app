@@ -228,6 +228,156 @@ export function parseCampaigns(rows: string[][]): CampaignEntry[] {
     .filter(c => c.company);
 }
 
+// Prospects tab — the pre-contact pipeline, deliberately separate from
+// Campaigns (which is companies actually caked, or genuinely interested,
+// and is used to refine ICP). A prospect graduates INTO Campaigns when a
+// cake is sent; until then it lives here.
+//
+// One row per CONTACT with company fields repeated, matching the shape the
+// research step emits (same as the Connections tab). The UI groups them by
+// company, since approve/reject is a company-level judgement.
+const PROSPECTS_FIELD_HEADERS: Record<string, string> = {
+  company: 'Company',
+  industry: 'Industry',
+  companySize: 'Company Size',
+  fundingStage: 'Funding Stage',
+  location: 'Location',
+  contactName: 'Contact Name',
+  position: 'Position',
+  url: 'LinkedIn URL',
+  status: 'Status',
+  rejectionReason: 'Rejection Reason',
+  address: 'Address',
+  addressConfirmedBy: 'Address Confirmed By',
+  dateAdded: 'Date Added',
+  dateReviewed: 'Date Reviewed',
+};
+
+export function buildProspectsColumnMap(headerRow: string[]): ConnectionsColumnMap {
+  return buildColumnMap(headerRow, PROSPECTS_FIELD_HEADERS);
+}
+
+export const PROSPECT_STATUSES = ['Pending', 'Approved', 'Ready to send', 'Rejected', 'Graduated'] as const;
+export type ProspectStatus = typeof PROSPECT_STATUSES[number];
+
+export const PROSPECT_REJECTION_REASONS = [
+  'Wrong industry',
+  'Too small',
+  'Too large',
+  'Wrong funding stage',
+  'Wrong location',
+  'No outbound motion',
+  'Already in CRM',
+  'Other',
+];
+
+export interface Prospect {
+  rowIndex: number;
+  company: string;
+  industry: string;
+  companySize: string;
+  fundingStage: string;
+  location: string;
+  contactName: string;
+  position: string;
+  url: string;
+  status: string;
+  rejectionReason: string;
+  address: string;
+  addressConfirmedBy: string;
+  dateAdded: string;
+  dateReviewed: string;
+}
+
+export function parseProspects(rows: string[][]): Prospect[] {
+  const { index: col } = buildProspectsColumnMap(rows[0] || []);
+  const get = (row: string[], key: string) => (row[col[key]] ?? '').trim();
+
+  return rows
+    .slice(1)
+    .map((row, i) => ({
+      rowIndex: i + 2, // 1-based, +1 for header
+      company: get(row, 'company'),
+      industry: get(row, 'industry'),
+      companySize: get(row, 'companySize'),
+      fundingStage: get(row, 'fundingStage'),
+      location: get(row, 'location'),
+      contactName: get(row, 'contactName'),
+      position: get(row, 'position'),
+      url: get(row, 'url'),
+      status: get(row, 'status') || 'Pending',
+      rejectionReason: get(row, 'rejectionReason'),
+      address: get(row, 'address'),
+      addressConfirmedBy: get(row, 'addressConfirmedBy'),
+      dateAdded: get(row, 'dateAdded'),
+      dateReviewed: get(row, 'dateReviewed'),
+    }))
+    .filter(p => p.company);
+}
+
+export interface ProspectCompany {
+  company: string;
+  industry: string;
+  companySize: string;
+  fundingStage: string;
+  location: string;
+  status: string;
+  rejectionReason: string;
+  address: string;
+  addressConfirmedBy: string;
+  dateAdded: string;
+  dateReviewed: string;
+  contacts: Prospect[];
+  // Dedupe signals — at 3,000+ existing contacts, research will inevitably
+  // resurface people already in the CRM. Flagged rather than auto-rejected,
+  // since an existing connection at a new-to-you company is still useful.
+  inConnections: boolean;
+  inCampaigns: boolean;
+  knownContactCount: number;
+}
+
+// Company-level fields are repeated across a company's contact rows; the
+// first row wins. Status likewise — approve/reject writes every row of the
+// company, so they shouldn't diverge in practice.
+export function groupProspects(
+  prospects: Prospect[],
+  contacts: Contact[] = [],
+  campaigns: CampaignEntry[] = []
+): ProspectCompany[] {
+  const connectionCompanies = new Set(contacts.map(c => normalizeCompany(c.company)).filter(Boolean));
+  const campaignCompanies = new Set(campaigns.map(c => normalizeCompany(c.company)).filter(Boolean));
+  const connectionNames = new Set(contacts.map(c => c.fullName.trim().toLowerCase()).filter(Boolean));
+
+  const groups = new Map<string, ProspectCompany>();
+  prospects.forEach(p => {
+    const key = normalizeCompany(p.company);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        company: p.company,
+        industry: p.industry,
+        companySize: p.companySize,
+        fundingStage: p.fundingStage,
+        location: p.location,
+        status: p.status,
+        rejectionReason: p.rejectionReason,
+        address: p.address,
+        addressConfirmedBy: p.addressConfirmedBy,
+        dateAdded: p.dateAdded,
+        dateReviewed: p.dateReviewed,
+        contacts: [],
+        inConnections: connectionCompanies.has(key),
+        inCampaigns: campaignCompanies.has(key),
+        knownContactCount: 0,
+      });
+    }
+    const g = groups.get(key)!;
+    g.contacts.push(p);
+    if (p.contactName && connectionNames.has(p.contactName.trim().toLowerCase())) g.knownContactCount++;
+  });
+
+  return Array.from(groups.values());
+}
+
 export function parseMessages(rows: string[][]): Message[] {
   return rows.slice(1).map(row => ({
     messageType: (row[0] || '').trim(),

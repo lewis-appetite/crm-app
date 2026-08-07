@@ -9,6 +9,7 @@ import {
   getRegionMode, regionSortRank,
   Experiment, ExperimentResults, ExperimentStage,
   getActiveExperiment, assignedTemplate, assignVariant,
+  ProspectCompany,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -16,6 +17,7 @@ import MessagesTab from './tabs/MessagesTab';
 import ConnectionsTab from './tabs/ConnectionsTab';
 import FocusTab from './tabs/FocusTab';
 import TestsTab from './tabs/TestsTab';
+import ProspectsTab from './tabs/ProspectsTab';
 
 interface CakeImage {
   name: string;
@@ -35,6 +37,7 @@ interface SheetData {
   focusSuggestions: string[];
   experiments: Experiment[];
   experimentResults: ExperimentResults[];
+  prospects: ProspectCompany[];
   messages: Message[];
   allContacts: Contact[];
   activity: ActivityEvent[];
@@ -44,8 +47,9 @@ interface SheetData {
   dailyNewGoal: number;
 }
 
-type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests';
+type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests' | 'prospects';
 const MORE_TABS: { tab: Tab; label: string }[] = [
+  { tab: 'prospects', label: 'Prospects' },
   { tab: 'messages', label: 'Messages' },
   { tab: 'cake', label: 'Cake' },
   { tab: 'tests', label: 'Tests' },
@@ -67,6 +71,14 @@ interface UpdateBody {
     detail: string;
   };
   campaign?: { company: string; status?: string; notes?: string; focus?: boolean };
+  prospect?: {
+    company: string;
+    status?: string;
+    rejectionReason?: string;
+    address?: string;
+    addressConfirmedBy?: string;
+    dateReviewed?: string;
+  };
   experiment?: {
     testId: string;
     name?: string;
@@ -434,6 +446,58 @@ export default function OutreachApp() {
     const payload: UpdateBody = { campaign: { company, ...updates } };
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
+  }
+
+  // Prospect mutations are company-level — the Apps Script updates every
+  // contact row for that company, so local state mirrors the whole group.
+  async function updateProspect(company: string, updates: Partial<Omit<NonNullable<UpdateBody['prospect']>, 'company'>>) {
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        prospects: prev.prospects.map(p =>
+          p.company !== company
+            ? p
+            : {
+                ...p,
+                ...(updates.status !== undefined ? { status: updates.status } : {}),
+                ...(updates.rejectionReason !== undefined ? { rejectionReason: updates.rejectionReason } : {}),
+                ...(updates.address !== undefined ? { address: updates.address } : {}),
+                ...(updates.addressConfirmedBy !== undefined ? { addressConfirmedBy: updates.addressConfirmedBy } : {}),
+              }
+        ),
+      };
+    });
+    const payload: UpdateBody = { prospect: { company, ...updates } };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
+  }
+
+  function handleApproveProspect(company: string) {
+    updateProspect(company, { status: 'Approved', rejectionReason: '', dateReviewed: todayDMY() });
+  }
+
+  function handleRejectProspect(company: string, reason: string) {
+    updateProspect(company, { status: 'Rejected', rejectionReason: reason, dateReviewed: todayDMY() });
+  }
+
+  function handleSaveProspectAddress(company: string, address: string, confirmedBy: string) {
+    updateProspect(company, {
+      address,
+      addressConfirmedBy: confirmedBy,
+      status: address && confirmedBy ? 'Ready to send' : 'Approved',
+    });
+  }
+
+  // Graduation: the prospect becomes a real Campaigns row at Delivered (the
+  // Apps Script stamps the cake-sent date on that first transition), and
+  // drops off the Prospects list so it isn't tracked in two places.
+  async function handleProspectCakeSent(company: string) {
+    await updateProspect(company, { status: 'Graduated' });
+    await updateCampaign(company, { status: 'Delivered' });
+    await syncPriority(company);
+    await silentRefresh();
+    setToast({ msg: `${company} moved into Campaigns as Delivered`, kind: 'ok' });
   }
 
   async function handleCreateExperiment(params: { name: string; stage: ExperimentStage; variantA: string; variantB: string }) {
@@ -1154,6 +1218,17 @@ export default function OutreachApp() {
         /* ── MESSAGES TAB ── */
         : tab === 'messages' ? (
           <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} />
+        )
+
+        /* ── PROSPECTS TAB ── */
+        : tab === 'prospects' ? (
+          <ProspectsTab
+            prospects={data?.prospects ?? []}
+            onApprove={handleApproveProspect}
+            onReject={handleRejectProspect}
+            onSaveAddress={handleSaveProspectAddress}
+            onCakeSent={handleProspectCakeSent}
+          />
         )
 
         /* ── TESTS TAB ── */

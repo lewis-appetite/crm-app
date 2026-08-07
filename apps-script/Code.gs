@@ -95,6 +95,36 @@ function doPost(e) {
     }
   }
 
+  // Prospects are stored one row per CONTACT with company fields repeated,
+  // but approve/reject is a company-level call - so this updates EVERY row
+  // matching the company, not just one. Header-driven like the others.
+  if (body.prospect) {
+    var prospectSheet = ss.getSheetByName('Prospects');
+    if (prospectSheet) {
+      var pCompanyCol = sheetHeaderIndex_('Prospects', 'Company') || 1;
+      var pRows = prospectSheet.getDataRange().getValues();
+      var pTarget = String(body.prospect.company).trim().toLowerCase();
+
+      var pFields = [
+        ['status', 'Status'],
+        ['rejectionReason', 'Rejection Reason'],
+        ['address', 'Address'],
+        ['addressConfirmedBy', 'Address Confirmed By'],
+        ['dateReviewed', 'Date Reviewed'],
+      ];
+
+      for (var p = 1; p < pRows.length; p++) {
+        if (String(pRows[p][pCompanyCol - 1]).trim().toLowerCase() !== pTarget) continue;
+        for (var f = 0; f < pFields.length; f++) {
+          var key = pFields[f][0];
+          if (body.prospect[key] === undefined) continue;
+          var colIdx = sheetHeaderIndexOrAppend_('Prospects', pFields[f][1]);
+          prospectSheet.getRange(p + 1, colIdx).setValue(body.prospect[key]);
+        }
+      }
+    }
+  }
+
   // Upsert-by-Test-ID, same pattern as the campaign block above. The client
   // generates testId (create) or passes an existing one (update/end) -
   // header-driven so the Experiments tab can be reorganized freely.
