@@ -37,6 +37,35 @@ function doPost(e) {
     });
   }
 
+  // Deletes specific Connections rows — used for one-off duplicate cleanup.
+  // Each entry carries the expected First/Last Name as a safety check, so a
+  // stale rowIndex (row shifted since the caller last read the sheet) skips
+  // instead of silently deleting the wrong person. Rows are deleted in
+  // descending order so earlier indices in the same batch stay valid as
+  // later ones are removed.
+  var deleteResults = [];
+  if (body.deleteRows && body.deleteRows.length > 0) {
+    var delSheet = ss.getSheetByName('Connections');
+    if (delSheet) {
+      var firstNameCol = connectionsHeaderIndex_('First Name');
+      var lastNameCol = connectionsHeaderIndex_('Last Name');
+      var toDelete = body.deleteRows.slice().sort(function (a, b) { return b.rowIndex - a.rowIndex; });
+      toDelete.forEach(function (item) {
+        var row = delSheet.getRange(item.rowIndex, 1, 1, delSheet.getLastColumn()).getValues()[0];
+        var actualFirst = firstNameCol ? String(row[firstNameCol - 1]).trim().toLowerCase() : '';
+        var actualLast = lastNameCol ? String(row[lastNameCol - 1]).trim().toLowerCase() : '';
+        var expectedFirst = String(item.firstName || '').trim().toLowerCase();
+        var expectedLast = String(item.lastName || '').trim().toLowerCase();
+        if (actualFirst !== expectedFirst || actualLast !== expectedLast) {
+          deleteResults.push({ rowIndex: item.rowIndex, deleted: false, reason: 'name mismatch: found "' + row[firstNameCol - 1] + ' ' + row[lastNameCol - 1] + '"' });
+          return;
+        }
+        delSheet.deleteRow(item.rowIndex);
+        deleteResults.push({ rowIndex: item.rowIndex, deleted: true });
+      });
+    }
+  }
+
   if (body.log) {
     var logSheet = ss.getSheetByName('Activity');
     if (logSheet) {
@@ -202,7 +231,7 @@ function doPost(e) {
   SpreadsheetApp.flush();
 
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError }))
+    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError, deleteResults: deleteResults }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 

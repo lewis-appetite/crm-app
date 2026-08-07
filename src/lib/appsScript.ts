@@ -18,6 +18,7 @@ export interface AppsScriptPayload {
   draft?: { to: string; subject: string; body: string; threadId?: string };
   gmailSearch?: { targetEmail: string; companyDomain?: string };
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
+  deleteRows?: { rowIndex: number; firstName: string; lastName: string }[];
   prospect?: {
     company: string; // applies to every row for this company
     status?: string;
