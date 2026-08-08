@@ -124,6 +124,54 @@ function doPost(e) {
     }
   }
 
+  // Appends new prospect rows (one per contact) - used by the ICP research
+  // task. Dedup/ICP-matching happens in the research step itself, before
+  // this ever gets called; this just writes what it's given. Status
+  // defaults to Pending, Date Added to today if not supplied.
+  var addProspectResults = [];
+  if (body.addProspects && body.addProspects.length > 0) {
+    var newProspectSheet = ss.getSheetByName('Prospects');
+    if (newProspectSheet) {
+      var prospectHeaders = [
+        'Company', 'Website URL', 'Industry', 'Company Size', 'Funding Stage', 'Location',
+        'Outbound Evidence', 'Recent News', 'Fit Rating', 'Reasoning',
+        'Contact Name', 'Position', 'LinkedIn URL', 'Status', 'Date Added',
+      ];
+      var prospectColIdx = {};
+      prospectHeaders.forEach(function (h) {
+        prospectColIdx[h] = sheetHeaderIndexOrAppend_('Prospects', h);
+      });
+      var todayForProspects = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      var lastCol = newProspectSheet.getLastColumn();
+
+      body.addProspects.forEach(function (item) {
+        var newRow = newProspectSheet.getLastRow() + 1;
+        var rowValues = new Array(lastCol).fill('');
+        function setField(header, value) {
+          if (value === undefined || value === null || value === '') return;
+          rowValues[prospectColIdx[header] - 1] = value;
+        }
+        setField('Company', item.company);
+        setField('Website URL', item.websiteUrl);
+        setField('Industry', item.industry);
+        setField('Company Size', item.companySize);
+        setField('Funding Stage', item.fundingStage);
+        setField('Location', item.location);
+        setField('Outbound Evidence', item.outboundEvidence);
+        setField('Recent News', item.recentNews);
+        setField('Fit Rating', item.fitRating);
+        setField('Reasoning', item.reasoning);
+        setField('Contact Name', item.contactName);
+        setField('Position', item.position);
+        setField('LinkedIn URL', item.url);
+        rowValues[prospectColIdx['Status'] - 1] = item.status || 'Pending';
+        rowValues[prospectColIdx['Date Added'] - 1] = item.dateAdded || todayForProspects;
+        newProspectSheet.getRange(newRow, 1, 1, lastCol).setValues([rowValues]);
+        addProspectResults.push({ row: newRow, company: item.company, contactName: item.contactName });
+      });
+    }
+  }
+
   // Prospects are stored one row per CONTACT with company fields repeated,
   // but approve/reject is a company-level call - so this updates EVERY row
   // matching the company, not just one. Header-driven like the others.
@@ -231,7 +279,7 @@ function doPost(e) {
   SpreadsheetApp.flush();
 
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError, deleteResults: deleteResults }))
+    .createTextOutput(JSON.stringify({ ok: true, draftMode: draftMode, draftReplyError: draftReplyError, deleteResults: deleteResults, addProspectResults: addProspectResults }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 

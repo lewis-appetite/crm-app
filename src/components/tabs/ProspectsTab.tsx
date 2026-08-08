@@ -14,8 +14,42 @@ interface Props {
 
 function Firmographics({ p }: { p: ProspectCompany }) {
   const bits = [p.industry, p.companySize, p.fundingStage, p.location].filter(Boolean);
-  if (bits.length === 0) return null;
-  return <div className={styles.prospectMeta}>{bits.join(' · ')}</div>;
+  return (
+    <div className={styles.prospectMeta}>
+      {p.websiteUrl && (
+        <a href={p.websiteUrl} target="_blank" rel="noopener noreferrer" className={styles.prospectWebsite}>
+          {p.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+        </a>
+      )}
+      {bits.length > 0 && <span>{bits.join(' · ')}</span>}
+    </div>
+  );
+}
+
+const FIT_RATING_STYLE: Record<string, string> = {
+  high: 'prospectFitHigh',
+  medium: 'prospectFitMedium',
+  med: 'prospectFitMedium',
+  low: 'prospectFitLow',
+};
+
+function ResearchDetail({ p }: { p: ProspectCompany }) {
+  if (!p.fitRating && !p.reasoning && !p.outboundEvidence && !p.recentNews) return null;
+  const fitClass = FIT_RATING_STYLE[p.fitRating.trim().toLowerCase()];
+  return (
+    <div className={styles.prospectResearch}>
+      {p.fitRating && (
+        <span className={`${styles.prospectFitBadge} ${fitClass ? styles[fitClass] : ''}`}>{p.fitRating} fit</span>
+      )}
+      {p.reasoning && <p className={styles.prospectReasoning}>{p.reasoning}</p>}
+      {p.outboundEvidence && (
+        <div className={styles.prospectResearchRow}><strong>Outbound evidence:</strong> {p.outboundEvidence}</div>
+      )}
+      {p.recentNews && (
+        <div className={styles.prospectResearchRow}><strong>Recent news:</strong> {p.recentNews}</div>
+      )}
+    </div>
+  );
 }
 
 function ContactList({ p }: { p: ProspectCompany }) {
@@ -69,6 +103,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
             {!p.inCampaigns && p.inConnections && <span className={styles.prospectFlag}>in CRM</span>}
           </div>
           <Firmographics p={p} />
+          <ResearchDetail p={p} />
           <ContactList p={p} />
           {p.knownContactCount > 0 && (
             <div className={styles.prospectNote}>

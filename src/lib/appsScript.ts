@@ -19,6 +19,23 @@ export interface AppsScriptPayload {
   gmailSearch?: { targetEmail: string; companyDomain?: string };
   batch?: { rowIndex: number; cells: { col: string; value: string }[] }[];
   deleteRows?: { rowIndex: number; firstName: string; lastName: string }[];
+  addProspects?: {
+    company: string;
+    websiteUrl?: string;
+    industry?: string;
+    companySize?: string;
+    fundingStage?: string;
+    location?: string;
+    outboundEvidence?: string;
+    recentNews?: string;
+    fitRating?: string;
+    reasoning?: string;
+    contactName?: string;
+    position?: string;
+    url?: string;
+    status?: string;
+    dateAdded?: string;
+  }[];
   prospect?: {
     company: string; // applies to every row for this company
     status?: string;

@@ -1161,6 +1161,72 @@
 .prospectMeta {
   font-size: 11px;
   color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prospectWebsite {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.prospectWebsite:hover {
+  text-decoration: underline;
+}
+
+.prospectResearch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.prospectFitBadge {
+  align-self: flex-start;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: capitalize;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+}
+
+.prospectFitHigh {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(74, 222, 128, 0.2);
+}
+
+.prospectFitMedium {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.2);
+}
+
+.prospectFitLow {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.prospectReasoning {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.prospectResearchRow {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.prospectResearchRow strong {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .prospectContacts {
