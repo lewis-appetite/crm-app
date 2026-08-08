@@ -22,6 +22,7 @@ export interface AppsScriptPayload {
   addProspects?: {
     company: string;
     websiteUrl?: string;
+    companyLinkedinUrl?: string;
     industry?: string;
     companySize?: string;
     fundingStage?: string;

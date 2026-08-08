@@ -239,6 +239,7 @@ export function parseCampaigns(rows: string[][]): CampaignEntry[] {
 const PROSPECTS_FIELD_HEADERS: Record<string, string> = {
   company: 'Company',
   websiteUrl: 'Website URL',
+  companyLinkedinUrl: 'Company LinkedIn URL',
   industry: 'Industry',
   companySize: 'Company Size',
   fundingStage: 'Funding Stage',
@@ -280,6 +281,7 @@ export interface Prospect {
   rowIndex: number;
   company: string;
   websiteUrl: string;
+  companyLinkedinUrl: string;
   industry: string;
   companySize: string;
   fundingStage: string;
@@ -309,6 +311,7 @@ export function parseProspects(rows: string[][]): Prospect[] {
       rowIndex: i + 2, // 1-based, +1 for header
       company: get(row, 'company'),
       websiteUrl: get(row, 'websiteUrl'),
+      companyLinkedinUrl: get(row, 'companyLinkedinUrl'),
       industry: get(row, 'industry'),
       companySize: get(row, 'companySize'),
       fundingStage: get(row, 'fundingStage'),
@@ -333,6 +336,7 @@ export function parseProspects(rows: string[][]): Prospect[] {
 export interface ProspectCompany {
   company: string;
   websiteUrl: string;
+  companyLinkedinUrl: string;
   industry: string;
   companySize: string;
   fundingStage: string;
@@ -375,6 +379,7 @@ export function groupProspects(
       groups.set(key, {
         company: p.company,
         websiteUrl: p.websiteUrl,
+        companyLinkedinUrl: p.companyLinkedinUrl,
         industry: p.industry,
         companySize: p.companySize,
         fundingStage: p.fundingStage,

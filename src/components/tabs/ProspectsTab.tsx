@@ -16,10 +16,19 @@ function Firmographics({ p }: { p: ProspectCompany }) {
   const bits = [p.industry, p.companySize, p.fundingStage, p.location].filter(Boolean);
   return (
     <div className={styles.prospectMeta}>
-      {p.websiteUrl && (
-        <a href={p.websiteUrl} target="_blank" rel="noopener noreferrer" className={styles.prospectWebsite}>
-          {p.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-        </a>
+      {(p.websiteUrl || p.companyLinkedinUrl) && (
+        <div className={styles.prospectLinks}>
+          {p.websiteUrl && (
+            <a href={p.websiteUrl} target="_blank" rel="noopener noreferrer" className={styles.prospectWebsite}>
+              {p.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+            </a>
+          )}
+          {p.companyLinkedinUrl && (
+            <a href={p.companyLinkedinUrl} target="_blank" rel="noopener noreferrer" className={styles.prospectWebsite}>
+              LinkedIn
+            </a>
+          )}
+        </div>
       )}
       {bits.length > 0 && <span>{bits.join(' · ')}</span>}
     </div>

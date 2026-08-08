@@ -1166,6 +1166,11 @@
   gap: 2px;
 }
 
+.prospectLinks {
+  display: flex;
+  gap: 10px;
+}
+
 .prospectWebsite {
   color: var(--blue);
   text-decoration: none;

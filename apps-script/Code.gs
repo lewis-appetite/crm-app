@@ -133,7 +133,7 @@ function doPost(e) {
     var newProspectSheet = ss.getSheetByName('Prospects');
     if (newProspectSheet) {
       var prospectHeaders = [
-        'Company', 'Website URL', 'Industry', 'Company Size', 'Funding Stage', 'Location',
+        'Company', 'Website URL', 'Company LinkedIn URL', 'Industry', 'Company Size', 'Funding Stage', 'Location',
         'Outbound Evidence', 'Recent News', 'Fit Rating', 'Reasoning',
         'Contact Name', 'Position', 'LinkedIn URL', 'Status', 'Date Added',
       ];
@@ -153,6 +153,7 @@ function doPost(e) {
         }
         setField('Company', item.company);
         setField('Website URL', item.websiteUrl);
+        setField('Company LinkedIn URL', item.companyLinkedinUrl);
         setField('Industry', item.industry);
         setField('Company Size', item.companySize);
         setField('Funding Stage', item.fundingStage);
