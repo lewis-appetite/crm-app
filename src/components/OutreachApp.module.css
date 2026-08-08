@@ -1272,6 +1272,11 @@ a.prospectContactName:hover {
   white-space: nowrap;
 }
 
+.prospectFlags {
+  font-size: 13px;
+  cursor: default;
+}
+
 .prospectFlag {
   margin-left: auto;
   font-family: 'DM Mono', monospace;

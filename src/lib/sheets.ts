@@ -279,6 +279,20 @@ export function prospectChannels(channel: string): ProspectChannel[] {
   return channel.trim().toLowerCase() === 'cake' ? ['Cake', 'Digital'] : ['Digital'];
 }
 
+// Location is free text from the research step (e.g. "London, UK" or "New
+// York (HQ), with Berlin and London offices") rather than a controlled
+// field, so this is a best-effort keyword scan, not exact matching — a
+// company can show both flags (offices in both countries) or neither.
+const UK_LOCATION_MARKERS = /\b(uk|u\.k\.|united kingdom|england|scotland|wales|london|manchester|birmingham|edinburgh|glasgow|bristol|leeds|cambridge|oxford)\b/i;
+const US_LOCATION_MARKERS = /\b(us|u\.s\.|usa|u\.s\.a\.|united states|new york|san francisco|los angeles|chicago|boston|seattle|austin|denver|atlanta|miami|nyc|silicon valley)\b/i;
+
+export function prospectLocationFlags(location: string): ('🇬🇧' | '🇺🇸')[] {
+  const flags: ('🇬🇧' | '🇺🇸')[] = [];
+  if (UK_LOCATION_MARKERS.test(location)) flags.push('🇬🇧');
+  if (US_LOCATION_MARKERS.test(location)) flags.push('🇺🇸');
+  return flags;
+}
+
 export const PROSPECT_REJECTION_REASONS = [
   'Wrong industry',
   'Too small',

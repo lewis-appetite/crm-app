@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ProspectCompany, PROSPECT_REJECTION_REASONS, PROSPECT_CHANNELS, ProspectChannel, prospectChannels } from '@/lib/sheets';
+import { ProspectCompany, PROSPECT_REJECTION_REASONS, PROSPECT_CHANNELS, ProspectChannel, prospectChannels, prospectLocationFlags } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 interface Props {
@@ -10,6 +10,12 @@ interface Props {
   onReject: (company: string, reason: string) => void;
   onSaveAddress: (company: string, address: string, confirmedBy: string) => void;
   onCakeSent: (company: string) => void;
+}
+
+function LocationFlags({ location }: { location: string }) {
+  const flags = prospectLocationFlags(location);
+  if (flags.length === 0) return null;
+  return <span className={styles.prospectFlags} title={location}>{flags.join(' ')}</span>;
 }
 
 function Firmographics({ p }: { p: ProspectCompany }) {
@@ -111,6 +117,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
         <div key={p.company} className={styles.testCard}>
           <div className={styles.testCardTop}>
             <span className={styles.testCardName}>{p.company}</span>
+            <LocationFlags location={p.location} />
             {p.inCampaigns && <span className={styles.prospectFlag}>in Campaigns</span>}
             {!p.inCampaigns && p.inConnections && <span className={styles.prospectFlag}>in CRM</span>}
           </div>
@@ -174,6 +181,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
           <div key={p.company} className={styles.testCard}>
             <div className={styles.testCardTop}>
               <span className={styles.testCardName}>{p.company}</span>
+              <LocationFlags location={p.location} />
               <span className={styles.testCardStage}>{readyToSend ? 'Ready to send' : 'Approved'}</span>
             </div>
             <Firmographics p={p} />
@@ -226,6 +234,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
         <div key={p.company} className={styles.testCard}>
           <div className={styles.testCardTop}>
             <span className={styles.testCardName}>{p.company}</span>
+            <LocationFlags location={p.location} />
             <span className={styles.testCardStage}>{prospectChannels(p.channel).includes('Cake') ? 'Also on Cake track' : 'Digital only'}</span>
           </div>
           <Firmographics p={p} />
@@ -240,6 +249,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
             <div key={p.company} className={styles.testCard}>
               <div className={styles.testCardTop}>
                 <span className={styles.testCardName}>{p.company}</span>
+                <LocationFlags location={p.location} />
                 <span className={styles.testCardStage}>{p.rejectionReason || 'Rejected'}</span>
               </div>
               <Firmographics p={p} />
