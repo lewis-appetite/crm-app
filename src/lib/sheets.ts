@@ -253,6 +253,7 @@ const PROSPECTS_FIELD_HEADERS: Record<string, string> = {
   url: 'LinkedIn URL',
   status: 'Status',
   rejectionReason: 'Rejection Reason',
+  channel: 'Channel',
   address: 'Address',
   addressConfirmedBy: 'Address Confirmed By',
   dateAdded: 'Date Added',
@@ -265,6 +266,18 @@ export function buildProspectsColumnMap(headerRow: string[]): ConnectionsColumnM
 
 export const PROSPECT_STATUSES = ['Pending', 'Approved', 'Ready to send', 'Rejected', 'Graduated'] as const;
 export type ProspectStatus = typeof PROSPECT_STATUSES[number];
+
+// Set at approval time. 'Cake' implies both channels (physical cake outreach
+// plus digital follow-up); 'Digital' is digital-only — there's no reverse
+// case, a company never gets cake without also being fair game digitally.
+export const PROSPECT_CHANNELS = ['Cake', 'Digital'] as const;
+export type ProspectChannel = typeof PROSPECT_CHANNELS[number];
+
+// Which channel sections (for Working-list segmentation / Phase 2 routine
+// targeting) a company belongs to, given its stored Channel value.
+export function prospectChannels(channel: string): ProspectChannel[] {
+  return channel.trim().toLowerCase() === 'cake' ? ['Cake', 'Digital'] : ['Digital'];
+}
 
 export const PROSPECT_REJECTION_REASONS = [
   'Wrong industry',
@@ -295,6 +308,7 @@ export interface Prospect {
   url: string;
   status: string;
   rejectionReason: string;
+  channel: string;
   address: string;
   addressConfirmedBy: string;
   dateAdded: string;
@@ -325,6 +339,7 @@ export function parseProspects(rows: string[][]): Prospect[] {
       url: get(row, 'url'),
       status: get(row, 'status') || 'Pending',
       rejectionReason: get(row, 'rejectionReason'),
+      channel: get(row, 'channel'),
       address: get(row, 'address'),
       addressConfirmedBy: get(row, 'addressConfirmedBy'),
       dateAdded: get(row, 'dateAdded'),
@@ -347,6 +362,7 @@ export interface ProspectCompany {
   reasoning: string;
   status: string;
   rejectionReason: string;
+  channel: string;
   address: string;
   addressConfirmedBy: string;
   dateAdded: string;
@@ -390,6 +406,7 @@ export function groupProspects(
         reasoning: p.reasoning,
         status: p.status,
         rejectionReason: p.rejectionReason,
+        channel: p.channel,
         address: p.address,
         addressConfirmedBy: p.addressConfirmedBy,
         dateAdded: p.dateAdded,

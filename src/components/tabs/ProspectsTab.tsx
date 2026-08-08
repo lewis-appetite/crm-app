@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { ProspectCompany, PROSPECT_REJECTION_REASONS } from '@/lib/sheets';
+import { ProspectCompany, PROSPECT_REJECTION_REASONS, PROSPECT_CHANNELS, ProspectChannel, prospectChannels } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 interface Props {
   prospects: ProspectCompany[];
-  onApprove: (company: string) => void;
+  onApprove: (company: string, channel: ProspectChannel) => void;
   onReject: (company: string, reason: string) => void;
   onSaveAddress: (company: string, address: string, confirmedBy: string) => void;
   onCakeSent: (company: string) => void;
@@ -82,11 +82,14 @@ function ContactList({ p }: { p: ProspectCompany }) {
 
 export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAddress, onCakeSent }: Props) {
   const [rejectingCompany, setRejectingCompany] = useState<string | null>(null);
+  const [approvingCompany, setApprovingCompany] = useState<string | null>(null);
   const [addressDrafts, setAddressDrafts] = useState<Record<string, { address: string; confirmedBy: string }>>({});
 
   const pending = prospects.filter(p => p.status === 'Pending');
   const working = prospects.filter(p => p.status === 'Approved' || p.status === 'Ready to send');
   const rejected = prospects.filter(p => p.status === 'Rejected');
+  const cakeWorking = working.filter(p => prospectChannels(p.channel).includes('Cake'));
+  const digitalWorking = working.filter(p => prospectChannels(p.channel).includes('Digital'));
 
   function draftFor(p: ProspectCompany) {
     return addressDrafts[p.company] ?? { address: p.address, confirmedBy: p.addressConfirmedBy };
@@ -133,9 +136,25 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
               ))}
               <button className={styles.todayMenuBtn} onClick={() => setRejectingCompany(null)}>Cancel</button>
             </div>
+          ) : approvingCompany === p.company ? (
+            <div className={styles.prospectReasonRow}>
+              <button
+                className={styles.todayMenuBtn}
+                onClick={() => { onApprove(p.company, 'Cake'); setApprovingCompany(null); }}
+              >
+                🎂 Cake (+ digital)
+              </button>
+              <button
+                className={styles.todayMenuBtn}
+                onClick={() => { onApprove(p.company, 'Digital'); setApprovingCompany(null); }}
+              >
+                Digital only
+              </button>
+              <button className={styles.todayMenuBtn} onClick={() => setApprovingCompany(null)}>Cancel</button>
+            </div>
           ) : (
             <div className={styles.todayActionsRow}>
-              <button className={`${styles.todayActionBtn} ${styles.todayActionGreen}`} onClick={() => onApprove(p.company)}>
+              <button className={`${styles.todayActionBtn} ${styles.todayActionGreen}`} onClick={() => setApprovingCompany(p.company)}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 Approve
               </button>
@@ -145,9 +164,9 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
         </div>
       ))}
 
-      <div className={styles.testsSectionLabel}>Working · {working.length}</div>
-      {working.length === 0 && <span className={styles.manageEmpty}>No approved prospects in flight</span>}
-      {working.map(p => {
+      <div className={styles.testsSectionLabel}>🎂 Cake outreach · {cakeWorking.length}</div>
+      {cakeWorking.length === 0 && <span className={styles.manageEmpty}>No cake-track prospects in flight</span>}
+      {cakeWorking.map(p => {
         const draft = draftFor(p);
         const dirty = draft.address !== p.address || draft.confirmedBy !== p.addressConfirmedBy;
         const readyToSend = !!p.address && !!p.addressConfirmedBy;
@@ -200,6 +219,19 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
           </div>
         );
       })}
+
+      <div className={styles.testsSectionLabel}>Digital outreach · {digitalWorking.length}</div>
+      {digitalWorking.length === 0 && <span className={styles.manageEmpty}>No digital-track prospects in flight</span>}
+      {digitalWorking.map(p => (
+        <div key={p.company} className={styles.testCard}>
+          <div className={styles.testCardTop}>
+            <span className={styles.testCardName}>{p.company}</span>
+            <span className={styles.testCardStage}>{prospectChannels(p.channel).includes('Cake') ? 'Also on Cake track' : 'Digital only'}</span>
+          </div>
+          <Firmographics p={p} />
+          <ContactList p={p} />
+        </div>
+      ))}
 
       {rejected.length > 0 && (
         <>

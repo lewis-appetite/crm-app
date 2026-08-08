@@ -186,6 +186,7 @@ function doPost(e) {
       var pFields = [
         ['status', 'Status'],
         ['rejectionReason', 'Rejection Reason'],
+        ['channel', 'Channel'],
         ['address', 'Address'],
         ['addressConfirmedBy', 'Address Confirmed By'],
         ['dateReviewed', 'Date Reviewed'],

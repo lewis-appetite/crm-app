@@ -10,6 +10,7 @@ import {
   Experiment, ExperimentResults, ExperimentStage,
   getActiveExperiment, assignedTemplate, assignVariant,
   ProspectCompany,
+  ProspectChannel,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -75,6 +76,7 @@ interface UpdateBody {
     company: string;
     status?: string;
     rejectionReason?: string;
+    channel?: string;
     address?: string;
     addressConfirmedBy?: string;
     dateReviewed?: string;
@@ -462,6 +464,7 @@ export default function OutreachApp() {
                 ...p,
                 ...(updates.status !== undefined ? { status: updates.status } : {}),
                 ...(updates.rejectionReason !== undefined ? { rejectionReason: updates.rejectionReason } : {}),
+                ...(updates.channel !== undefined ? { channel: updates.channel } : {}),
                 ...(updates.address !== undefined ? { address: updates.address } : {}),
                 ...(updates.addressConfirmedBy !== undefined ? { addressConfirmedBy: updates.addressConfirmedBy } : {}),
               }
@@ -473,8 +476,8 @@ export default function OutreachApp() {
     if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
 
-  function handleApproveProspect(company: string) {
-    updateProspect(company, { status: 'Approved', rejectionReason: '', dateReviewed: todayDMY() });
+  function handleApproveProspect(company: string, channel: ProspectChannel) {
+    updateProspect(company, { status: 'Approved', rejectionReason: '', channel, dateReviewed: todayDMY() });
   }
 
   function handleRejectProspect(company: string, reason: string) {

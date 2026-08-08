@@ -85,11 +85,13 @@ Not every row is a real campaign — the firmographic/ICP fields let signal from
 
 ### Prospects tab (pre-contact pipeline)
 
-Header-driven like the others (`PROSPECTS_FIELD_HEADERS`/`parseProspects`). **One row per contact**, company fields repeated — matching the shape the ICP research step emits (same as Connections). Headers: `Company | Industry | Company Size | Funding Stage | Location | Contact Name | Position | LinkedIn URL | Status | Rejection Reason | Address | Address Confirmed By | Date Added | Date Reviewed`.
+Header-driven like the others (`PROSPECTS_FIELD_HEADERS`/`parseProspects`). **One row per contact**, company fields repeated — matching the shape the ICP research step emits (same as Connections). Headers: `Company | Website URL | Company LinkedIn URL | Industry | Company Size | Funding Stage | Location | Outbound Evidence | Recent News | Fit Rating | Reasoning | Contact Name | Position | LinkedIn URL | Status | Rejection Reason | Channel | Address | Address Confirmed By | Date Added | Date Reviewed`.
 
 Deliberately **separate from Campaigns**: Campaigns is companies actually caked or genuinely interested (and is the dataset used to refine ICP), Prospects is everything before first contact. A prospect **graduates into Campaigns** at `Delivered` when the cake is sent, and is marked `Graduated` so it's never tracked in both places.
 
 Status lifecycle: `Pending` → `Approved` → `Ready to send` (set automatically once both Address and Address Confirmed By are filled) → `Graduated`. Plus `Rejected` with a reason from `PROSPECT_REJECTION_REASONS`.
+
+**Channel** (`PROSPECT_CHANNELS`: `Cake` | `Digital`) is set at approval time, not researched — the app prompts Cake vs Digital-only right in the Approve action (`ProspectsTab.tsx`). `Cake` implies both (a company that gets cake is automatically fair game digitally too — see `prospectChannels()`); `Digital` never implies `Cake`. The Working list in `ProspectsTab.tsx` segments into a Cake-track section (with the address/confirmed-by fields and Cake-sent button) and a Digital-track section (contacts only, no physical fulfilment fields) using `prospectChannels(p.channel)`.
 
 Approve/reject is a **company-level** judgement, so the Apps Script `prospect` handler updates every contact row matching that company, not a single row. `groupProspects` (`sheets.ts`) collapses contact rows into `ProspectCompany` objects for the UI and flags overlap with existing data (`inConnections`/`inCampaigns`/`knownContactCount`) — at 3,000+ contacts, research will resurface people already in the CRM, so these are surfaced as badges rather than auto-rejected (an existing connection at a new-to-you company is still useful).
 

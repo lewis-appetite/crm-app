@@ -41,6 +41,7 @@ export interface AppsScriptPayload {
     company: string; // applies to every row for this company
     status?: string;
     rejectionReason?: string;
+    channel?: string;
     address?: string;
     addressConfirmedBy?: string;
     dateReviewed?: string;
