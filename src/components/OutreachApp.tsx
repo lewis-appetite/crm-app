@@ -11,6 +11,7 @@ import {
   getActiveExperiment, assignedTemplate, assignVariant,
   ProspectCompany,
   ProspectChannel,
+  nextFollowUpStage, followUpFieldKey, FOLLOW_UP_MAX, FollowUpFieldKey, FOLLOW_UP_FIELD_KEYS,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -371,10 +372,8 @@ export default function OutreachApp() {
   const safeIndex = Math.min(index, Math.max(0, queue.length - 1));
   const contact = queue[safeIndex] ?? null;
 
-  const followUpStage = tab !== 'followup' ? 0
-    : !contact?.followUpMessage1 ? 1
-    : !contact?.followUpMessage2 ? 2
-    : 3;
+  const followUpStage = tab !== 'followup' || !contact ? 0
+    : nextFollowUpStage(contact) ?? FOLLOW_UP_MAX + 1;
 
   // Active A/B test (if any) for whichever stage the current card is at -
   // up to three can run at once (new/followup1/followup2 independently)
@@ -709,7 +708,7 @@ export default function OutreachApp() {
     const cells: { col: string; value: string }[] = [{ col: col('lastContacted'), value: todayDMY() }];
     let actionType: string;
     let newFollowUpCount: number | null = null;
-    let messageField: 'message' | 'followUpMessage1' | 'followUpMessage2' | null = null;
+    let messageField: 'message' | FollowUpFieldKey | null = null;
 
     if (!c.message) {
       cells.push({ col: col('message'), value: 'One-off' });
@@ -718,16 +717,14 @@ export default function OutreachApp() {
     } else {
       newFollowUpCount = (parseInt(c.followUps) || 0) + 1;
       cells.push({ col: col('followUps'), value: String(newFollowUpCount) });
-      if (!c.followUpMessage1) {
-        cells.push({ col: col('followUpMessage1'), value: 'One-off' });
-        messageField = 'followUpMessage1';
-        actionType = 'followup1';
-      } else if (!c.followUpMessage2) {
-        cells.push({ col: col('followUpMessage2'), value: 'One-off' });
-        messageField = 'followUpMessage2';
-        actionType = 'followup2';
+      const stage = nextFollowUpStage(c);
+      const fieldKey = stage ? followUpFieldKey(stage) : null;
+      if (fieldKey) {
+        cells.push({ col: col(fieldKey), value: 'One-off' });
+        messageField = fieldKey;
+        actionType = `followup${stage}`;
       } else {
-        actionType = 'followup3';
+        actionType = `followup${FOLLOW_UP_MAX + 1}`;
       }
     }
 
@@ -896,11 +893,11 @@ export default function OutreachApp() {
     if (action === 'contacted') {
       const templateUsed = selectedMessage || suggestion?.abbreviation || '';
       const actionType = tab === 'new' ? 'new' : `followup${followUpStage}`;
+      const fieldKey = tab === 'followup' ? followUpFieldKey(followUpStage) : null;
 
       if (templateUsed) {
         if (tab === 'new') cells.push({ col: col('message'), value: templateUsed });
-        else if (followUpStage === 1) cells.push({ col: col('followUpMessage1'), value: templateUsed });
-        else if (followUpStage === 2) cells.push({ col: col('followUpMessage2'), value: templateUsed });
+        else if (fieldKey) cells.push({ col: col(fieldKey), value: templateUsed });
       }
       const newFollowUpCount = tab === 'followup' ? (parseInt(c.followUps) || 0) + 1 : null;
       if (newFollowUpCount !== null) cells.push({ col: col('followUps'), value: String(newFollowUpCount) });
@@ -927,8 +924,7 @@ export default function OutreachApp() {
                 lastContacted: todayDMY(),
                 ...(newFollowUpCount !== null ? { followUps: String(newFollowUpCount) } : {}),
                 ...(templateUsed && tab === 'new' ? { message: templateUsed } : {}),
-                ...(templateUsed && tab === 'followup' && followUpStage === 1 ? { followUpMessage1: templateUsed } : {}),
-                ...(templateUsed && tab === 'followup' && followUpStage === 2 ? { followUpMessage2: templateUsed } : {}),
+                ...(templateUsed && tab === 'followup' && fieldKey ? { [fieldKey]: templateUsed } : {}),
               };
         return {
           ...prev,
@@ -992,8 +988,7 @@ export default function OutreachApp() {
       function: c.function,
       message: c.message,
       reply: c.reply,
-      followUpMessage1: c.followUpMessage1,
-      followUpMessage2: c.followUpMessage2,
+      ...Object.fromEntries(FOLLOW_UP_FIELD_KEYS.map(k => [k, c[k]])),
       lastContacted: c.lastContacted,
       comment: c.comment,
     });
@@ -1015,7 +1010,7 @@ export default function OutreachApp() {
       editValues.reply.toLowerCase() === 'interested' &&
       prevContact!.reply.toLowerCase() !== 'interested';
     const creditedTemplate =
-      editValues.followUpMessage2 || editValues.followUpMessage1 || editValues.message || '';
+      [...FOLLOW_UP_FIELD_KEYS].reverse().map(k => editValues[k]).find(Boolean) || editValues.message || '';
 
     let newPriority: string | null = null;
     if (replyChanged && prevContact) {
@@ -1044,8 +1039,7 @@ export default function OutreachApp() {
         function: editValues.function,
         message: editValues.message,
         reply: editValues.reply,
-        followUpMessage1: editValues.followUpMessage1,
-        followUpMessage2: editValues.followUpMessage2,
+        ...Object.fromEntries(FOLLOW_UP_FIELD_KEYS.map(k => [k, editValues[k]])),
         lastContacted: editValues.lastContacted,
         comment: editValues.comment,
         ...(newPriority !== null ? { priority: newPriority } : {}),
@@ -1533,10 +1527,10 @@ export default function OutreachApp() {
             </div>
 
             {/* Message picker */}
-            {followUpStage <= 2 && messageOptions.length > 0 && (
+            {followUpStage <= FOLLOW_UP_MAX && messageOptions.length > 0 && (
               <div className={styles.msgPickerRow}>
                 <label className={styles.msgPickerLabel}>
-                  {followUpStage === 2 ? 'Follow up 2' : followUpStage === 1 ? 'Follow up 1' : 'Message sent'}
+                  {followUpStage === 0 ? 'Message sent' : `Follow up ${followUpStage}`}
                 </label>
                 <select
                   className={styles.msgPickerSelect}
@@ -1550,8 +1544,8 @@ export default function OutreachApp() {
                 </select>
               </div>
             )}
-            {followUpStage === 3 && (
-              <div className={styles.secondFollowUpNote}>3rd follow-up — date only will be recorded</div>
+            {followUpStage > FOLLOW_UP_MAX && (
+              <div className={styles.secondFollowUpNote}>All {FOLLOW_UP_MAX} follow-ups sent — date only will be recorded</div>
             )}
 
             {/* Actions */}

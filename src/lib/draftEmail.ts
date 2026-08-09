@@ -1,4 +1,4 @@
-import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, businessDaysAgo, todayDMY, Contact } from '@/lib/sheets';
+import { parseConnections, parseMessages, parseCampaigns, parseActivity, normalizeCompany, daysAgo, businessDaysAgo, todayDMY, Contact, followUpMessages } from '@/lib/sheets';
 import { fetchSheetRange, resolveConnectionsColumn } from '@/lib/sheetsApi';
 import { fetchFromAppsScript } from '@/lib/appsScript';
 
@@ -24,8 +24,7 @@ interface GmailThreadSummary {
 function contactHistory(c: Contact, templateText: Record<string, string>): string {
   const touches: string[] = [];
   if (c.message) touches.push(`initial LinkedIn message ("${c.message}"${templateText[c.message] ? `: ${templateText[c.message].slice(0, 120)}` : ''})`);
-  if (c.followUpMessage1) touches.push(`follow-up 1 ("${c.followUpMessage1}")`);
-  if (c.followUpMessage2) touches.push(`follow-up 2 ("${c.followUpMessage2}")`);
+  followUpMessages(c).forEach((abbr, i) => touches.push(`follow-up ${i + 1} ("${abbr}")`));
   const days = daysAgo(c.lastContacted);
   const parts = [
     `${c.fullName} (${c.position || 'unknown role'})`,

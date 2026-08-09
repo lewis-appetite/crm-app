@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Contact, daysAgo, POSITIVE_REPLIES } from '@/lib/sheets';
+import { Contact, daysAgo, POSITIVE_REPLIES, FOLLOW_UP_MAX } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 const REPLY_OPTIONS = ['', 'Interested', 'Yes', 'Referred', 'Opportunity', 'Dead lead', 'Wrong location', 'Wrong role', 'Wrong business', 'Not interested', 'Blocked', 'Gone cold'];
@@ -121,20 +121,19 @@ export default function ConnectionsTab({
                     {messageAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
-                <div className={styles.editField}>
-                  <label className={styles.editLabel}>Follow Up 1</label>
-                  <select className={styles.editInput} value={editValues.followUpMessage1 ?? ''} onChange={e => onEditValueChange('followUpMessage1', e.target.value)}>
-                    <option value="">—</option>
-                    {messageAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
-                <div className={styles.editField}>
-                  <label className={styles.editLabel}>Follow Up 2</label>
-                  <select className={styles.editInput} value={editValues.followUpMessage2 ?? ''} onChange={e => onEditValueChange('followUpMessage2', e.target.value)}>
-                    <option value="">—</option>
-                    {messageAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
+                {Array.from({ length: FOLLOW_UP_MAX }, (_, i) => i + 1).map(n => (
+                  <div key={n} className={styles.editField}>
+                    <label className={styles.editLabel}>Follow Up {n}</label>
+                    <select
+                      className={styles.editInput}
+                      value={editValues[`followUpMessage${n}`] ?? ''}
+                      onChange={e => onEditValueChange(`followUpMessage${n}`, e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {messageAbbrs.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                ))}
                 <div className={styles.editActions}>
                   <button className={styles.editCancelBtn} onClick={onCloseEdit}>Cancel</button>
                   <button className={styles.editSaveBtn} onClick={onSaveEdit} disabled={saveLoading}>

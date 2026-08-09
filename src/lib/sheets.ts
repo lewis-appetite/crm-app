@@ -15,6 +15,10 @@ export interface Contact {
   followUps: string;
   followUpMessage1: string;
   followUpMessage2: string;
+  followUpMessage3: string;
+  followUpMessage4: string;
+  followUpMessage5: string;
+  followUpMessage6: string;
   lastContacted: string;
   comment: string;
   email: string;
@@ -56,6 +60,10 @@ const CONNECTIONS_FIELD_HEADERS: Record<string, string> = {
   followUps: 'Follow ups',
   followUpMessage1: 'Follow Up Message 1',
   followUpMessage2: 'Follow Up Message 2',
+  followUpMessage3: 'Follow Up Message 3',
+  followUpMessage4: 'Follow Up Message 4',
+  followUpMessage5: 'Follow Up Message 5',
+  followUpMessage6: 'Follow Up Message 6',
   lastContacted: 'Last Contacted',
   comment: 'Comment',
   email: 'Email',
@@ -125,6 +133,10 @@ export function parseConnections(rows: string[][]): Contact[] {
     followUps: get(row, 'followUps'),
     followUpMessage1: get(row, 'followUpMessage1'),
     followUpMessage2: get(row, 'followUpMessage2'),
+    followUpMessage3: get(row, 'followUpMessage3'),
+    followUpMessage4: get(row, 'followUpMessage4'),
+    followUpMessage5: get(row, 'followUpMessage5'),
+    followUpMessage6: get(row, 'followUpMessage6'),
     lastContacted: get(row, 'lastContacted'),
     comment: get(row, 'comment'),
     email: cleanContactField(row[col.email]),
@@ -630,6 +642,35 @@ export function normAbbr(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Follow-up messages are sent sequentially into Follow Up Message 1..6 -
+// these helpers are the single place that knows how many columns exist and
+// which one is next, so the sheet can grow more follow-up columns later by
+// only changing this list.
+export const FOLLOW_UP_FIELD_KEYS = [
+  'followUpMessage1', 'followUpMessage2', 'followUpMessage3',
+  'followUpMessage4', 'followUpMessage5', 'followUpMessage6',
+] as const;
+export type FollowUpFieldKey = typeof FOLLOW_UP_FIELD_KEYS[number];
+export const FOLLOW_UP_MAX = FOLLOW_UP_FIELD_KEYS.length;
+
+// All follow-up templates actually sent to this contact, in order (skips
+// any gaps, though sends should never leave one since they fill in order).
+export function followUpMessages(c: Contact): string[] {
+  return FOLLOW_UP_FIELD_KEYS.map(k => c[k]).filter(Boolean);
+}
+
+// 1-based stage of the next empty follow-up slot, or null once all
+// FOLLOW_UP_MAX columns are filled (further touches still get logged, just
+// without a dedicated template column).
+export function nextFollowUpStage(c: Contact): number | null {
+  const i = FOLLOW_UP_FIELD_KEYS.findIndex(k => !c[k]);
+  return i === -1 ? null : i + 1;
+}
+
+export function followUpFieldKey(stage: number): FollowUpFieldKey | null {
+  return FOLLOW_UP_FIELD_KEYS[stage - 1] ?? null;
+}
+
 // "One-off" is a placeholder for custom messages, not a real template —
 // it stays in stats for comparison but is never suggested
 function isOneOff(abbr: string): boolean {
@@ -953,7 +994,7 @@ export function suggestMessage(
 ): SuggestedMessage | null {
   // Never suggest a template this contact has already received
   const alreadySent = new Set(
-    [contact.message, contact.followUpMessage1, contact.followUpMessage2].filter(Boolean).map(normAbbr)
+    [contact.message, ...followUpMessages(contact)].filter(Boolean).map(normAbbr)
   );
   const wantedType = isFollowUp ? 'Follow Up' : 'Initial Outreach';
   const candidates = messages.filter(
@@ -975,7 +1016,7 @@ export function suggestMessage(
   allContacts.forEach(c => {
     if (!countsForReplyRate(c)) return;
     const abbrs = isFollowUp
-      ? [c.followUpMessage1, c.followUpMessage2].filter(Boolean)
+      ? followUpMessages(c)
       : c.message ? [c.message] : [];
     if (abbrs.length === 0) return;
 
@@ -1046,7 +1087,7 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
   contacts.forEach(c => {
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
     const eligible = countsForReplyRate(c);
-    [c.message, c.followUpMessage1, c.followUpMessage2].filter(Boolean).forEach(abbr => {
+    [c.message, ...followUpMessages(c)].filter(Boolean).forEach(abbr => {
       const key = normAbbr(abbr);
       if (!stats[key]) stats[key] = { sent: 0, eligible: 0, replied: 0 };
       stats[key].sent++;
@@ -1080,8 +1121,13 @@ const REPLY_BREAKDOWN_POSITIVE = ['interested', 'yes', 'referred', 'opportunity'
 // are the sender's own call, not something the contact said.
 const REPLY_BREAKDOWN_ANY = [...REPLY_BREAKDOWN_POSITIVE, 'not interested', 'gone cold'];
 
+// Broader than ExperimentStage (which stays capped at new/followup1/followup2
+// - A/B tests are deliberately scoped to those three), since reply-rate
+// reporting should cover every follow-up column that exists.
+export type ReplyStage = 'new' | `followup${number}`;
+
 export interface ReplyBreakdownRow {
-  stage: ExperimentStage;
+  stage: ReplyStage;
   template: string;
   sent: number;
   eligible: number;
@@ -1093,12 +1139,12 @@ export interface ReplyBreakdownRow {
 
 // Per-template, per-stage reply/positive-reply rates - same "eligible 7+ days
 // or already replied" gating as getMessageStats, just split by stage
-// (new/followup1/followup2) instead of merged into one "Follow Up" bucket,
-// since a template can be used at either follow-up stage.
+// (new/followup1/followup2/...) instead of merged into one "Follow Up"
+// bucket, since a template can be used at any follow-up stage.
 export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
-  const groups = new Map<string, { stage: ExperimentStage; template: string; sent: number; eligible: number; replied: number; positive: number }>();
+  const groups = new Map<string, { stage: ReplyStage; template: string; sent: number; eligible: number; replied: number; positive: number }>();
 
-  function record(stage: ExperimentStage, templateRaw: string, c: Contact) {
+  function record(stage: ReplyStage, templateRaw: string, c: Contact) {
     if (!templateRaw) return;
     const key = `${stage}|${normAbbr(templateRaw)}`;
     if (!groups.has(key)) groups.set(key, { stage, template: templateRaw, sent: 0, eligible: 0, replied: 0, positive: 0 });
@@ -1113,8 +1159,7 @@ export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
 
   contacts.forEach(c => {
     if (c.message) record('new', c.message, c);
-    if (c.followUpMessage1) record('followup1', c.followUpMessage1, c);
-    if (c.followUpMessage2) record('followup2', c.followUpMessage2, c);
+    FOLLOW_UP_FIELD_KEYS.forEach((key, i) => record(`followup${i + 1}`, c[key], c));
   });
 
   return Array.from(groups.values())
@@ -1164,8 +1209,7 @@ export interface Stats {
   sixWeeks: WeekBucket[];
   replyRates: {
     initialMessage: StageRate;
-    firstFollowUp: StageRate;
-    secondFollowUp: StageRate;
+    followUps: StageRate[]; // index 0 = 1st follow-up ... index FOLLOW_UP_MAX-1 = last
   };
 }
 
@@ -1186,7 +1230,7 @@ function dayKey(d: Date): string {
 }
 
 function contactStage(c: Contact): 'new' | 'followup' {
-  return (c.followUpMessage1 || c.followUpMessage2) ? 'followup' : 'new';
+  return followUpMessages(c).length > 0 ? 'followup' : 'new';
 }
 
 function emptyBucket(weekStart: Date): WeekBucket {
@@ -1280,38 +1324,26 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
   // to FU2 still had an initial message and an FU1 sent; excluding them from
   // those counts (the previous bug here) undercounted every stage except
   // whichever one each contact happened to be sitting at right now.
-  const stages = {
-    initialMessage: { sent: 0, eligible: 0, replied: 0 },
-    firstFollowUp: { sent: 0, eligible: 0, replied: 0 },
-    secondFollowUp: { sent: 0, eligible: 0, replied: 0 },
+  type StageAccum = { sent: number; eligible: number; replied: number };
+  const bump = (s: StageAccum, eligible: boolean, isPositive: boolean) => {
+    s.sent++;
+    if (eligible) {
+      s.eligible++;
+      if (isPositive) s.replied++;
+    }
   };
+  const initialStage: StageAccum = { sent: 0, eligible: 0, replied: 0 };
+  const followUpStages: StageAccum[] = FOLLOW_UP_FIELD_KEYS.map(() => ({ sent: 0, eligible: 0, replied: 0 }));
   contacts.forEach(c => {
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
     const eligible = countsForReplyRate(c);
-    if (c.message) {
-      stages.initialMessage.sent++;
-      if (eligible) {
-        stages.initialMessage.eligible++;
-        if (isPositive) stages.initialMessage.replied++;
-      }
-    }
-    if (c.followUpMessage1) {
-      stages.firstFollowUp.sent++;
-      if (eligible) {
-        stages.firstFollowUp.eligible++;
-        if (isPositive) stages.firstFollowUp.replied++;
-      }
-    }
-    if (c.followUpMessage2) {
-      stages.secondFollowUp.sent++;
-      if (eligible) {
-        stages.secondFollowUp.eligible++;
-        if (isPositive) stages.secondFollowUp.replied++;
-      }
-    }
+    if (c.message) bump(initialStage, eligible, isPositive);
+    FOLLOW_UP_FIELD_KEYS.forEach((key, i) => {
+      if (c[key]) bump(followUpStages[i], eligible, isPositive);
+    });
   });
 
-  const toRate = (s: { sent: number; eligible: number; replied: number }): StageRate => ({
+  const toRate = (s: StageAccum): StageRate => ({
     sent: s.sent,
     eligible: s.eligible,
     replied: s.replied,
@@ -1327,9 +1359,8 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
     lastWeek,
     sixWeeks: buckets,
     replyRates: {
-      initialMessage: toRate(stages.initialMessage),
-      firstFollowUp: toRate(stages.firstFollowUp),
-      secondFollowUp: toRate(stages.secondFollowUp),
+      initialMessage: toRate(initialStage),
+      followUps: followUpStages.map(toRate),
     },
   };
 }

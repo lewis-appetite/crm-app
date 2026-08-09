@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Stats, Contact, ExperimentStage, getReplyBreakdown } from '@/lib/sheets';
+import { Stats, Contact, ReplyStage, getReplyBreakdown } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 function delta(a: number, b: number) {
@@ -10,14 +10,19 @@ function delta(a: number, b: number) {
   return { value: Math.abs(d), positive: d > 0 };
 }
 
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+function ordinal(n: number): string {
+  return ORDINALS[n - 1] ?? `${n}th`;
+}
+
 function RateRow({
   label, stage, stageKey, expanded, onToggle,
 }: {
   label: string;
   stage: { sent: number; eligible: number; replied: number; rate: number | null };
-  stageKey: ExperimentStage;
+  stageKey: ReplyStage;
   expanded: boolean;
-  onToggle: (key: ExperimentStage) => void;
+  onToggle: (key: ReplyStage) => void;
 }) {
   const pct = stage.rate ?? 0;
   return (
@@ -42,10 +47,10 @@ function RateRow({
 export default function StatsTab({ stats, allContacts }: { stats: Stats; allContacts: Contact[] }) {
   const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
   const maxBar = Math.max(...sixWeeks.map(w => w.total), 1);
-  const [expandedStage, setExpandedStage] = useState<ExperimentStage | null>(null);
+  const [expandedStage, setExpandedStage] = useState<ReplyStage | null>(null);
 
   const breakdown = getReplyBreakdown(allContacts);
-  const breakdownByStage = (stage: ExperimentStage) => breakdown.filter(r => r.stage === stage);
+  const breakdownByStage = (stage: ReplyStage) => breakdown.filter(r => r.stage === stage);
 
   return (
     <div className={styles.statsPage}>
@@ -130,9 +135,10 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
         <div className={styles.statsCardTitle}>Reply rates by stage</div>
         {([
           ['new', 'Initial message', replyRates.initialMessage],
-          ['followup1', '1st follow-up', replyRates.firstFollowUp],
-          ['followup2', '2nd follow-up', replyRates.secondFollowUp],
-        ] as [ExperimentStage, string, { sent: number; eligible: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
+          ...replyRates.followUps.map(
+            (stage, i) => [`followup${i + 1}`, `${ordinal(i + 1)} follow-up`, stage] as const
+          ),
+        ] as [ReplyStage, string, { sent: number; eligible: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
           <div key={key}>
             <RateRow
               label={label}
