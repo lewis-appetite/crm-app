@@ -677,9 +677,8 @@ function isOneOff(abbr: string): boolean {
   return normAbbr(abbr) === 'oneoff';
 }
 
-// Replies that still warrant a follow-up, in priority order
+// Replies that still warrant a follow-up
 const FOLLOW_UP_WORTHY = ['interested', 'yes', ''];
-const REPLY_PRIORITY: Record<string, number> = { interested: 0, yes: 1, '': 2 };
 
 export function isDead(contact: Contact): boolean {
   return !FOLLOW_UP_WORTHY.includes(contact.reply.toLowerCase());
@@ -749,15 +748,11 @@ export function getFollowUpQueue(
   return contacts
     .filter(c => isFollowUpDue(c, intervalDays) && !focusedCompanyKeys.has(normalizeCompany(c.company)))
     .sort((a, b) => {
-      // Sort by reply priority first (Interested → Yes → Blank → Referred)
-      const aPri = REPLY_PRIORITY[a.reply.toLowerCase()] ?? 2;
-      const bPri = REPLY_PRIORITY[b.reply.toLowerCase()] ?? 2;
-      if (aPri !== bPri) return aPri - bPri;
-      // Within priority: no follow-up sent yet floats to top
-      const aHasFollowUp = !!a.followUpMessage1;
-      const bHasFollowUp = !!b.followUpMessage1;
-      if (aHasFollowUp !== bHasFollowUp) return aHasFollowUp ? 1 : -1;
-      // Then oldest last contacted first
+      // Replied contacts (Interested/Yes) come before no-reply-yet
+      const aReplied = a.reply ? 0 : 1;
+      const bReplied = b.reply ? 0 : 1;
+      if (aReplied !== bReplied) return aReplied - bReplied;
+      // Then longest time since last contacted first
       const da = parseDate(a.lastContacted);
       const db = parseDate(b.lastContacted);
       if (!da || !db) return 0;
