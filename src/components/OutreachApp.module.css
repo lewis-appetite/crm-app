@@ -978,10 +978,6 @@
   padding: 0 2px 2px;
 }
 
-.messageSentNote {
-  color: var(--text-dim);
-}
-
 /* Cake button on contact card */
 .cardBtns {
   display: flex;

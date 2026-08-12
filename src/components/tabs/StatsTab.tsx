@@ -19,7 +19,7 @@ function RateRow({
   label, stage, stageKey, expanded, onToggle,
 }: {
   label: string;
-  stage: { sent: number; eligible: number; replied: number; rate: number | null };
+  stage: { sent: number; replied: number; rate: number | null };
   stageKey: ReplyStage;
   expanded: boolean;
   onToggle: (key: ReplyStage) => void;
@@ -34,7 +34,7 @@ function RateRow({
       <span className={styles.ratePct}>
         {stage.rate !== null ? `${stage.rate}%` : '—'}
       </span>
-      <span className={styles.rateSent} title={`${stage.replied} replied / ${stage.eligible} eligible (7+ days or already replied)`}>
+      <span className={styles.rateSent} title={`${stage.replied} replied / ${stage.sent} sent`}>
         {stage.sent} sent
       </span>
       <svg className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -138,7 +138,7 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
           ...replyRates.followUps.map(
             (stage, i) => [`followup${i + 1}`, `${ordinal(i + 1)} follow-up`, stage] as const
           ),
-        ] as [ReplyStage, string, { sent: number; eligible: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
+        ] as [ReplyStage, string, { sent: number; replied: number; rate: number | null }][]).map(([key, label, stage]) => (
           <div key={key}>
             <RateRow
               label={label}
@@ -164,10 +164,10 @@ export default function StatsTab({ stats, allContacts }: { stats: Stats; allCont
                         <span className={styles.replyBreakdownTemplate}>{row.template}</span>
                         <span className={styles.replyBreakdownStat}>{row.sent}</span>
                         <span className={styles.replyBreakdownStat}>
-                          {row.replyRate !== null ? `${row.replyRate}%` : '—'} <span className={styles.rateSent}>({row.replied}/{row.eligible})</span>
+                          {row.replyRate !== null ? `${row.replyRate}%` : '—'} <span className={styles.rateSent}>({row.replied}/{row.sent})</span>
                         </span>
                         <span className={styles.replyBreakdownStat}>
-                          {row.positiveRate !== null ? `${row.positiveRate}%` : '—'} <span className={styles.rateSent}>({row.positive}/{row.eligible})</span>
+                          {row.positiveRate !== null ? `${row.positiveRate}%` : '—'} <span className={styles.rateSent}>({row.positive}/{row.sent})</span>
                         </span>
                       </div>
                     ))}

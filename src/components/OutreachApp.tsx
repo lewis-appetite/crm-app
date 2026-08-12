@@ -1060,8 +1060,8 @@ export default function OutreachApp() {
       setCelebration({
         title: '🎉 Interested!',
         detail:
-          s && s.eligible > 0
-            ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.eligible) * 100)}% reply rate (${s.replied}/${s.eligible})`
+          s && s.sent > 0
+            ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.sent) * 100)}% reply rate (${s.replied}/${s.sent})`
             : `${prevContact.fullName} is interested`,
       });
     }

@@ -27,7 +27,7 @@ function VariantRow({ label, stats }: { label: string; stats: ExperimentResults[
       <span className={styles.testVariantTemplate}>{stats.template || '—'}</span>
       <span className={styles.testVariantStat}>
         {stats.rate !== null
-          ? `${stats.rate}% (${stats.replied}/${stats.eligible})`
+          ? `${stats.rate}% (${stats.replied}/${stats.sent})`
           : `${stats.sent}/${MIN_SAMPLE_PER_VARIANT} sent — too early to call`}
       </span>
     </div>

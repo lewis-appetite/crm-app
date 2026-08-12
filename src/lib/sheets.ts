@@ -562,9 +562,8 @@ export interface ExperimentVariantStats {
   variant: 'A' | 'B';
   template: string;
   sent: number;
-  eligible: number; // subset old enough (or already replied) to fairly count toward the rate
   replied: number;
-  rate: number | null; // null until eligible sample clears MIN_SAMPLE_PER_VARIANT - "too early to call"
+  rate: number | null; // null until sample clears MIN_SAMPLE_PER_VARIANT - "too early to call"
 }
 
 export interface ExperimentResults {
@@ -601,18 +600,16 @@ export function computeExperimentResults(
       rowIndexes.add(a.rowIndex);
     });
 
-    let eligible = 0;
     let replied = 0;
     rowIndexes.forEach(rowIndex => {
       const c = contactByRow.get(rowIndex);
-      if (!c || !countsForReplyRate(c)) return;
-      eligible++;
+      if (!c) return;
       if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) replied++;
     });
 
     const sent = rowIndexes.size;
-    const rate = eligible >= MIN_SAMPLE_PER_VARIANT ? Math.round((replied / eligible) * 100) : null;
-    return { variant, template, sent, eligible, replied, rate };
+    const rate = sent >= MIN_SAMPLE_PER_VARIANT ? Math.round((replied / sent) * 100) : null;
+    return { variant, template, sent, replied, rate };
   }
 
   return {
@@ -625,16 +622,6 @@ export function computeExperimentResults(
 // 'referred' means the contact pointed us elsewhere, not that they're
 // personally interested — excluded from positive-reply stats and follow-ups
 export const POSITIVE_REPLIES = ['interested', 'yes'];
-
-// Contacts messaged recently who haven't replied yet shouldn't drag down
-// reply rates — they haven't had a fair chance to respond
-const REPLY_WINDOW_DAYS = 7;
-
-export function countsForReplyRate(c: Contact): boolean {
-  if (c.reply) return true;
-  const days = daysAgo(c.lastContacted);
-  return days !== null && days >= REPLY_WINDOW_DAYS;
-}
 
 // Template abbreviations in Connections have case/punctuation variants
 // ("One-off" / "one-off" / "One off") — compare normalized
@@ -1009,7 +996,6 @@ export function suggestMessage(
   };
 
   allContacts.forEach(c => {
-    if (!countsForReplyRate(c)) return;
     const abbrs = isFollowUp
       ? followUpMessages(c)
       : c.message ? [c.message] : [];
@@ -1071,25 +1057,20 @@ function personalise(template: string, contact: Contact): string {
 export interface MessageStats {
   abbreviation: string;
   sent: number; // true total times this template was used, ever
-  eligible: number; // subset old enough (or already replied) to fairly count toward the rate
   replied: number;
-  replyRate: number | null; // replied / eligible
+  replyRate: number | null; // replied / sent
 }
 
 export function getMessageStats(contacts: Contact[], messages: Message[]): MessageStats[] {
-  const stats: Record<string, { sent: number; eligible: number; replied: number }> = {};
+  const stats: Record<string, { sent: number; replied: number }> = {};
 
   contacts.forEach(c => {
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    const eligible = countsForReplyRate(c);
     [c.message, ...followUpMessages(c)].filter(Boolean).forEach(abbr => {
       const key = normAbbr(abbr);
-      if (!stats[key]) stats[key] = { sent: 0, eligible: 0, replied: 0 };
+      if (!stats[key]) stats[key] = { sent: 0, replied: 0 };
       stats[key].sent++;
-      if (eligible) {
-        stats[key].eligible++;
-        if (isPositive) stats[key].replied++;
-      }
+      if (isPositive) stats[key].replied++;
     });
   });
 
@@ -1098,9 +1079,8 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
     return {
       abbreviation: m.abbreviation,
       sent: s?.sent ?? 0,
-      eligible: s?.eligible ?? 0,
       replied: s?.replied ?? 0,
-      replyRate: s && s.eligible >= 2 ? Math.round((s.replied / s.eligible) * 100) : null,
+      replyRate: s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
     };
   });
 }
@@ -1125,28 +1105,24 @@ export interface ReplyBreakdownRow {
   stage: ReplyStage;
   template: string;
   sent: number;
-  eligible: number;
-  replied: number; // any-reply count among eligible
-  positive: number; // positive-reply count among eligible
-  replyRate: number | null; // replied / eligible, null under min sample
-  positiveRate: number | null; // positive / eligible, null under min sample
+  replied: number; // any-reply count
+  positive: number; // positive-reply count
+  replyRate: number | null; // replied / sent, null under min sample
+  positiveRate: number | null; // positive / sent, null under min sample
 }
 
-// Per-template, per-stage reply/positive-reply rates - same "eligible 7+ days
-// or already replied" gating as getMessageStats, just split by stage
+// Per-template, per-stage reply/positive-reply rates, split by stage
 // (new/followup1/followup2/...) instead of merged into one "Follow Up"
 // bucket, since a template can be used at any follow-up stage.
 export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
-  const groups = new Map<string, { stage: ReplyStage; template: string; sent: number; eligible: number; replied: number; positive: number }>();
+  const groups = new Map<string, { stage: ReplyStage; template: string; sent: number; replied: number; positive: number }>();
 
   function record(stage: ReplyStage, templateRaw: string, c: Contact) {
     if (!templateRaw) return;
     const key = `${stage}|${normAbbr(templateRaw)}`;
-    if (!groups.has(key)) groups.set(key, { stage, template: templateRaw, sent: 0, eligible: 0, replied: 0, positive: 0 });
+    if (!groups.has(key)) groups.set(key, { stage, template: templateRaw, sent: 0, replied: 0, positive: 0 });
     const g = groups.get(key)!;
     g.sent++;
-    if (!countsForReplyRate(c)) return;
-    g.eligible++;
     const r = c.reply.toLowerCase();
     if (REPLY_BREAKDOWN_ANY.includes(r)) g.replied++;
     if (REPLY_BREAKDOWN_POSITIVE.includes(r)) g.positive++;
@@ -1160,8 +1136,8 @@ export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
   return Array.from(groups.values())
     .map(g => ({
       ...g,
-      replyRate: g.eligible >= 2 ? Math.round((g.replied / g.eligible) * 100) : null,
-      positiveRate: g.eligible >= 2 ? Math.round((g.positive / g.eligible) * 100) : null,
+      replyRate: g.sent >= 2 ? Math.round((g.replied / g.sent) * 100) : null,
+      positiveRate: g.sent >= 2 ? Math.round((g.positive / g.sent) * 100) : null,
     }))
     .sort((a, b) => (b.replyRate ?? -1) - (a.replyRate ?? -1));
 }
@@ -1189,9 +1165,8 @@ export interface WeekBucket {
 
 export interface StageRate {
   sent: number; // raw total ever sent at this stage - matches what you'd count by eye in the sheet
-  eligible: number; // subset sent 7+ days ago (or already replied) - the fair denominator for rate
   replied: number;
-  rate: number | null; // replied / eligible
+  rate: number | null; // replied / sent
 }
 
 export interface Stats {
@@ -1319,30 +1294,25 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
   // to FU2 still had an initial message and an FU1 sent; excluding them from
   // those counts (the previous bug here) undercounted every stage except
   // whichever one each contact happened to be sitting at right now.
-  type StageAccum = { sent: number; eligible: number; replied: number };
-  const bump = (s: StageAccum, eligible: boolean, isPositive: boolean) => {
+  type StageAccum = { sent: number; replied: number };
+  const bump = (s: StageAccum, isPositive: boolean) => {
     s.sent++;
-    if (eligible) {
-      s.eligible++;
-      if (isPositive) s.replied++;
-    }
+    if (isPositive) s.replied++;
   };
-  const initialStage: StageAccum = { sent: 0, eligible: 0, replied: 0 };
-  const followUpStages: StageAccum[] = FOLLOW_UP_FIELD_KEYS.map(() => ({ sent: 0, eligible: 0, replied: 0 }));
+  const initialStage: StageAccum = { sent: 0, replied: 0 };
+  const followUpStages: StageAccum[] = FOLLOW_UP_FIELD_KEYS.map(() => ({ sent: 0, replied: 0 }));
   contacts.forEach(c => {
     const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    const eligible = countsForReplyRate(c);
-    if (c.message) bump(initialStage, eligible, isPositive);
+    if (c.message) bump(initialStage, isPositive);
     FOLLOW_UP_FIELD_KEYS.forEach((key, i) => {
-      if (c[key]) bump(followUpStages[i], eligible, isPositive);
+      if (c[key]) bump(followUpStages[i], isPositive);
     });
   });
 
   const toRate = (s: StageAccum): StageRate => ({
     sent: s.sent,
-    eligible: s.eligible,
     replied: s.replied,
-    rate: s.eligible >= 2 ? Math.round((s.replied / s.eligible) * 100) : null,
+    rate: s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
   });
 
   return {

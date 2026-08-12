@@ -62,7 +62,7 @@ export default function MessagesTab({ allContacts, messages }: { allContacts: Co
                     </span>
                     <span className={styles.msgTableAbbr}>{msg.abbreviation}</span>
                     {s?.sent > 0 && (
-                      <span className={styles.msgTableSent}>{s.replied}/{s.eligible} of {s.sent} sent</span>
+                      <span className={styles.msgTableSent}>{s.replied}/{s.sent} sent</span>
                     )}
                   </div>
                 );
@@ -90,11 +90,6 @@ export default function MessagesTab({ allContacts, messages }: { allContacts: Co
               {s && s.sent > 0 && (
                 <div className={styles.messageSentRow}>
                   {s.replied} positive / {s.sent} sent
-                  {s.eligible < s.sent && (
-                    <span className={styles.messageSentNote}>
-                      {' '}· rate based on {s.eligible} sent 7+ days ago
-                    </span>
-                  )}
                 </div>
               )}
               <p className={styles.messageItemBody}>{msg.fullMessage}</p>
