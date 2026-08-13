@@ -51,7 +51,7 @@ interface SheetData {
 
 type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests' | 'prospects';
 const MORE_TABS: { tab: Tab; label: string }[] = [
-  { tab: 'prospects', label: 'Prospects' },
+  { tab: 'prospects', label: 'Cake Prospect' },
   { tab: 'messages', label: 'Messages' },
   { tab: 'cake', label: 'Cake' },
   { tab: 'tests', label: 'Tests' },
