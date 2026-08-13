@@ -751,6 +751,24 @@ export function getNewContactsQueue(contacts: Contact[]): Contact[] {
   return contacts.filter(c => !c.message && !c.lastContacted && !isDead(c));
 }
 
+// Every live conversation (Interested/Yes reply), independent of follow-up
+// cadence gating - dedicated visibility so they can't get buried inside the
+// Follow-ups queue while waiting for their next due date. Call booked drops
+// a contact off this list since the conversation has already moved past
+// "reply tracking" into a scheduled meeting. Sorted oldest-last-contacted
+// first, same convention as Follow-ups, so whoever's waited longest for a
+// response from you surfaces first.
+export function getRepliedQueue(contacts: Contact[]): Contact[] {
+  return contacts
+    .filter(c => POSITIVE_REPLIES.includes(c.reply.toLowerCase()) && !c.callBooked)
+    .sort((a, b) => {
+      const da = parseDate(a.lastContacted);
+      const db = parseDate(b.lastContacted);
+      if (!da || !db) return 0;
+      return da.getTime() - db.getTime();
+    });
+}
+
 // Region-based time-of-day prioritization: UK waking hours favor UK contacts,
 // US waking hours favor US contacts. Blank region is never deprioritized
 // (still tagging in progress) - it sorts between the two, never last.

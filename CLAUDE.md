@@ -104,15 +104,17 @@ Address hunting is manual and deliberately excluded from the research step.
 
 **Priority column sync** — `computePriorityLabel` mirrors the tier logic above but without the cadence gating (it's "why track this contact" not "due today", so it doesn't need daily rewrites). Written to col S whenever the underlying reason could have changed: `POST /api/sync-priority` (`{ company }`) recomputes and batch-writes every contact at that company after a campaign stage change; single-contact Reply changes (Today tab, All tab) write col S inline in the same request. `apps-script/Code.gs backfillPriorityColumn()` is the one-time initializer for existing rows.
 
-**Follow-up queue** — contacts where:
+**Follow-up queue** (`getFollowUpQueue`) — contacts where:
 - `message` is set (initial message was sent)
 - Not dead (`reply` not in: dead lead, not interested, blocked, gone cold)
 - Not `reply === "interested"`
 - `daysAgo(lastContacted) >= FOLLOW_UP_INTERVAL_DAYS`
-- Sorted: contacts with no follow-up message yet first, then oldest last-contacted
+- Sorted: replied (Interested/Yes) before no-reply-yet, then longest-since-last-contacted first within each group. Client-side stable sort layers region time-of-day preference (same `regionSortRank` as New) and A/B-test pinning on top, see In-progress plan below.
 
 **New contacts queue** — contacts where:
 - `message` is empty AND `lastContacted` is empty AND not dead
+
+**Replied queue** (`getRepliedQueue`) — every contact with `reply` in Interested/Yes and no `Call booked`, sorted oldest-last-contacted first. Deliberately not cadence-gated like Follow-ups (`FOLLOW_UP_INTERVAL_DAYS` doesn't apply) — this is the "don't lose track of a live conversation" view, surfaced as the **Replied** tab in the "⋯" menu. A contact drops off the moment a meeting is booked or the reply is changed away from Interested/Yes.
 
 **AI suggestion** — for a given contact, looks at contacts with similar role/function, finds the template abbreviation with the highest reply rate (min 2 data points), returns it with a reply rate %.
 
@@ -146,7 +148,7 @@ Writes go through the Apps Script web app — the API key is read-only. The key 
 
 Top-level: **Follow-ups** (contacts due for re-engagement, one card at a time) / **New** (untouched connections; cake-image matches sort first with inline preview) / **Focus** (manual company shortlist + auto-suggest, see Key Logic) / **All** (searchable/filterable list of every contact with inline editing).
 
-Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_TABS` in `OutreachApp.tsx`): **Prospects** (review queue for ICP-researched companies + approved working list, see Prospects tab above) / **Messages** (template library with reply rates, card/table views) / **Cake** (copyable ChatGPT prompt + Drive template link) / **Tests** (A/B test creation + results, see In-progress plan below) / **Stats** (today count, streak, week-on-week bar chart, reply rates by stage).
+Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_TABS` in `OutreachApp.tsx`): **Replied** (every Interested/Yes contact, independent of follow-up cadence gating — see Key Logic below) / **Prospects** (review queue for ICP-researched companies + approved working list, see Prospects tab above) / **Messages** (template library with reply rates, card/table views) / **Cake** (copyable ChatGPT prompt + Drive template link) / **Tests** (A/B test creation + results, see In-progress plan below) / **Stats** (today count, streak, week-on-week bar chart, reply rates by stage).
 
 ## Gamification (goal: 25 new + all due follow-ups daily)
 

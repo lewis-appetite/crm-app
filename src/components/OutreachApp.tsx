@@ -12,6 +12,7 @@ import {
   ProspectCompany,
   ProspectChannel,
   nextFollowUpStage, followUpFieldKey, FOLLOW_UP_MAX, FollowUpFieldKey, FOLLOW_UP_FIELD_KEYS,
+  getRepliedQueue,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -20,6 +21,7 @@ import ConnectionsTab from './tabs/ConnectionsTab';
 import FocusTab from './tabs/FocusTab';
 import TestsTab from './tabs/TestsTab';
 import ProspectsTab from './tabs/ProspectsTab';
+import RepliedTab from './tabs/RepliedTab';
 
 interface CakeImage {
   name: string;
@@ -49,8 +51,9 @@ interface SheetData {
   dailyNewGoal: number;
 }
 
-type Tab = 'followup' | 'new' | 'focus' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests' | 'prospects';
+type Tab = 'followup' | 'new' | 'focus' | 'replied' | 'messages' | 'cake' | 'connections' | 'stats' | 'tests' | 'prospects';
 const MORE_TABS: { tab: Tab; label: string }[] = [
+  { tab: 'replied', label: 'Replied' },
   { tab: 'prospects', label: 'Cake Prospect' },
   { tab: 'messages', label: 'Messages' },
   { tab: 'cake', label: 'Cake' },
@@ -418,6 +421,8 @@ export default function OutreachApp() {
     .map(g => ({ ...g, contacts: g.contacts.filter(c => !dismissed.has(c.rowIndex)) }))
     .filter(g => g.contacts.length > 0);
   const focusContactCount = focusGroups.reduce((n, g) => n + g.contacts.length, 0);
+
+  const repliedQueue = data ? getRepliedQueue(data.allContacts) : [];
 
   async function updateSheet(
     rowIndex: number,
@@ -1270,6 +1275,23 @@ export default function OutreachApp() {
             onReplied={handleReplied}
             onMeetingBooked={handleMeetingBooked}
             onDone={handleFocusDone}
+            commentDrafts={commentDrafts}
+            onCommentDraftChange={(rowIndex, value) => setCommentDrafts(prev => ({ ...prev, [rowIndex]: value }))}
+            onSaveComment={handleSaveComment}
+            onLinkedIn={handleLinkedIn}
+            onDraftEmail={handleDraftEmail}
+            onFindEmail={handleFindEmail}
+            onCallContact={handleCallContact}
+            emailBusy={emailBusy}
+          />
+        )
+
+        /* ── REPLIED (LIVE CONVERSATIONS) TAB ── */
+        : tab === 'replied' ? (
+          <RepliedTab
+            contacts={repliedQueue}
+            onReplied={handleReplied}
+            onMeetingBooked={handleMeetingBooked}
             commentDrafts={commentDrafts}
             onCommentDraftChange={(rowIndex, value) => setCommentDrafts(prev => ({ ...prev, [rowIndex]: value }))}
             onSaveComment={handleSaveComment}
