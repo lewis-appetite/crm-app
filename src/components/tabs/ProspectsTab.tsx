@@ -88,8 +88,15 @@ function ContactList({ p }: { p: ProspectCompany }) {
 
 export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAddress, onCakeSent }: Props) {
   const [rejectingCompany, setRejectingCompany] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
   const [approvingCompany, setApprovingCompany] = useState<string | null>(null);
   const [addressDrafts, setAddressDrafts] = useState<Record<string, { address: string; confirmedBy: string }>>({});
+
+  function submitReject(company: string, reason: string) {
+    onReject(company, rejectNote.trim() ? `${reason} — ${rejectNote.trim()}` : reason);
+    setRejectingCompany(null);
+    setRejectNote('');
+  }
 
   const pending = prospects.filter(p => p.status === 'Pending');
   const working = prospects.filter(p => p.status === 'Approved' || p.status === 'Ready to send');
@@ -132,16 +139,22 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
 
           {rejectingCompany === p.company ? (
             <div className={styles.prospectReasonRow}>
+              <input
+                className={styles.editInput}
+                placeholder="Add your own note (optional)…"
+                value={rejectNote}
+                onChange={e => setRejectNote(e.target.value)}
+              />
               {PROSPECT_REJECTION_REASONS.map(reason => (
                 <button
                   key={reason}
                   className={styles.todayMenuBtn}
-                  onClick={() => { onReject(p.company, reason); setRejectingCompany(null); }}
+                  onClick={() => submitReject(p.company, reason)}
                 >
                   {reason}
                 </button>
               ))}
-              <button className={styles.todayMenuBtn} onClick={() => setRejectingCompany(null)}>Cancel</button>
+              <button className={styles.todayMenuBtn} onClick={() => { setRejectingCompany(null); setRejectNote(''); }}>Cancel</button>
             </div>
           ) : approvingCompany === p.company ? (
             <div className={styles.prospectReasonRow}>
