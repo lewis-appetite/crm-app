@@ -104,6 +104,16 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
   const cakeWorking = working.filter(p => prospectChannels(p.channel).includes('Cake'));
   const digitalWorking = working.filter(p => prospectChannels(p.channel).includes('Digital'));
 
+  // US-flagged-only (no UK flag) companies aren't viable cake targets, so
+  // skip the channel picker for them entirely - one-click straight to
+  // Digital. Anything ambiguous (no flag detected either way) stays in the
+  // normal picker group rather than risk silently defaulting a UK company.
+  const usOnlyPending = pending.filter(p => {
+    const flags = prospectLocationFlags(p.location);
+    return flags.includes('🇺🇸') && !flags.includes('🇬🇧');
+  });
+  const ukOrUnclearPending = pending.filter(p => !usOnlyPending.includes(p));
+
   function draftFor(p: ProspectCompany) {
     return addressDrafts[p.company] ?? { address: p.address, confirmedBy: p.addressConfirmedBy };
   }
@@ -120,7 +130,7 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
 
       <div className={styles.testsSectionLabel}>To review · {pending.length}</div>
       {pending.length === 0 && <span className={styles.manageEmpty}>Nothing waiting for review</span>}
-      {pending.map(p => (
+      {ukOrUnclearPending.map(p => (
         <div key={p.company} className={styles.testCard}>
           <div className={styles.testCardTop}>
             <span className={styles.testCardName}>{p.company}</span>
@@ -183,6 +193,59 @@ export default function ProspectsTab({ prospects, onApprove, onReject, onSaveAdd
           )}
         </div>
       ))}
+
+      {usOnlyPending.length > 0 && (
+        <>
+          <div className={styles.testsSectionLabel}>🇺🇸 US only — digital outreach · {usOnlyPending.length}</div>
+          {usOnlyPending.map(p => (
+            <div key={p.company} className={styles.testCard}>
+              <div className={styles.testCardTop}>
+                <span className={styles.testCardName}>{p.company}</span>
+                <LocationFlags location={p.location} />
+                {p.inCampaigns && <span className={styles.prospectFlag}>in Campaigns</span>}
+                {!p.inCampaigns && p.inConnections && <span className={styles.prospectFlag}>in CRM</span>}
+              </div>
+              <Firmographics p={p} />
+              <ResearchDetail p={p} />
+              <ContactList p={p} />
+              {p.knownContactCount > 0 && (
+                <div className={styles.prospectNote}>
+                  {p.knownContactCount} of these {p.knownContactCount === 1 ? 'is' : 'are'} already a connection
+                </div>
+              )}
+
+              {rejectingCompany === p.company ? (
+                <div className={styles.prospectReasonRow}>
+                  <input
+                    className={styles.editInput}
+                    placeholder="Add your own note (optional)…"
+                    value={rejectNote}
+                    onChange={e => setRejectNote(e.target.value)}
+                  />
+                  {PROSPECT_REJECTION_REASONS.map(reason => (
+                    <button
+                      key={reason}
+                      className={styles.todayMenuBtn}
+                      onClick={() => submitReject(p.company, reason)}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                  <button className={styles.todayMenuBtn} onClick={() => { setRejectingCompany(null); setRejectNote(''); }}>Cancel</button>
+                </div>
+              ) : (
+                <div className={styles.todayActionsRow}>
+                  <button className={`${styles.todayActionBtn} ${styles.todayActionGreen}`} onClick={() => onApprove(p.company, 'Digital')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Approve — Digital
+                  </button>
+                  <button className={styles.todayActionBtn} onClick={() => setRejectingCompany(p.company)}>Reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
 
       <div className={styles.testsSectionLabel}>🎂 Cake outreach · {cakeWorking.length}</div>
       {cakeWorking.length === 0 && <span className={styles.manageEmpty}>No cake-track prospects in flight</span>}
