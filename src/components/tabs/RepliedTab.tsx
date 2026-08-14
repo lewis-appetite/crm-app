@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Contact, daysAgo } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
@@ -8,7 +7,7 @@ interface Props {
   contacts: Contact[];
   onReplied: (c: Contact, value: 'Interested' | 'Not interested') => void;
   onMeetingBooked: (c: Contact) => void;
-  onLogFollowUp: (c: Contact, note: string) => void;
+  onLogFollowUp: (c: Contact) => void;
   commentDrafts: Record<number, string>;
   onCommentDraftChange: (rowIndex: number, value: string) => void;
   onSaveComment: (c: Contact) => void;
@@ -24,15 +23,6 @@ export default function RepliedTab({
   commentDrafts, onCommentDraftChange, onSaveComment,
   onLinkedIn, onDraftEmail, onFindEmail, onCallContact, emailBusy,
 }: Props) {
-  const [loggingRowIndex, setLoggingRowIndex] = useState<number | null>(null);
-  const [followUpNote, setFollowUpNote] = useState('');
-
-  function submitFollowUp(c: Contact) {
-    if (!followUpNote.trim()) return;
-    onLogFollowUp(c, followUpNote);
-    setLoggingRowIndex(null);
-    setFollowUpNote('');
-  }
   return (
     <div className={styles.todayPage}>
       {contacts.length === 0 ? (
@@ -75,28 +65,8 @@ export default function RepliedTab({
               </div>
             </div>
 
-            {loggingRowIndex === c.rowIndex ? (
-              <div className={styles.prospectReasonRow}>
-                <input
-                  className={styles.editInput}
-                  placeholder="What did you follow up with…"
-                  value={followUpNote}
-                  onChange={e => setFollowUpNote(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && submitFollowUp(c)}
-                  autoFocus
-                />
-                <button
-                  className={`${styles.todayMenuBtn} ${styles.todayMenuGreen}`}
-                  onClick={() => submitFollowUp(c)}
-                  disabled={!followUpNote.trim()}
-                >
-                  Log it
-                </button>
-                <button className={styles.todayMenuBtn} onClick={() => { setLoggingRowIndex(null); setFollowUpNote(''); }}>Cancel</button>
-              </div>
-            ) : (
             <div className={styles.todayActionsRow}>
-              <button className={styles.todayActionBtn} onClick={() => setLoggingRowIndex(c.rowIndex)}>
+              <button className={styles.todayActionBtn} onClick={() => onLogFollowUp(c)}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 Log follow-up
               </button>
@@ -146,7 +116,6 @@ export default function RepliedTab({
                 </button>
               )}
             </div>
-            )}
 
             <div className={styles.todayCommentRow}>
               <input

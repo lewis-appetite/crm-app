@@ -709,7 +709,7 @@ export default function OutreachApp() {
     return data?.columns[field] ?? '';
   }
 
-  async function handleFocusDone(c: Contact, note: string = '') {
+  async function handleFocusDone(c: Contact) {
     const cells: { col: string; value: string }[] = [{ col: col('lastContacted'), value: todayDMY() }];
     let actionType: string;
     let newFollowUpCount: number | null = null;
@@ -733,22 +733,11 @@ export default function OutreachApp() {
       }
     }
 
-    // A note logged alongside a one-off touch (e.g. from the Replied tab's
-    // "Log follow-up" button) is appended to the persistent Comment field
-    // so it's visible on the contact at a glance, not just buried in the
-    // Activity log.
-    const trimmedNote = note.trim();
-    const newComment = trimmedNote
-      ? `${c.comment ? `${c.comment} | ` : ''}${todayDMY()}: ${trimmedNote}`
-      : null;
-    if (newComment !== null) cells.push({ col: col('comment'), value: newComment });
-
     await updateSheet(c.rowIndex, cells, {
       action: actionType,
       template: 'One-off',
       name: c.fullName,
       company: c.company,
-      detail: trimmedNote,
     });
 
     setData(prev => {
@@ -761,7 +750,6 @@ export default function OutreachApp() {
               lastContacted: todayDMY(),
               ...(newFollowUpCount !== null ? { followUps: String(newFollowUpCount) } : {}),
               ...(messageField ? { [messageField]: 'One-off' } : {}),
-              ...(newComment !== null ? { comment: newComment } : {}),
             };
       return { ...prev, allContacts: prev.allContacts.map(upd) };
     });
