@@ -205,8 +205,8 @@ User asked for a larger restructure (2026-07-25 onward). Status per piece, so a 
 - **Experiments tab needs to be created** in the spreadsheet, with header row `Test ID | Name | Stage | Variant A | Variant B | Status | Started | Ended | Winner | Notes` (any column order/position — header-driven). Until it exists, the Tests screen has nothing to read and test creation will silently append a new tab-less sheet on first write... actually will just fail since `getSheetByName('Experiments')` returns null — create the tab first.
 - **`apps-script/Code.gs` was updated again** (Experiments upsert-by-Test-ID handler, header-driven) — paste the latest version into the Apps Script editor and redeploy via **Manage deployments → edit the existing deployment → Version: New version → Deploy** (not "New deployment", which creates a different URL). Double-check the deployment you're editing is the one whose URL matches `GOOGLE_APPS_SCRIPT_URL` — this project previously had duplicate `doPost` functions across stray `.gs` files silently shadowing real changes; if edits still don't seem to take effect, check for that first.
 
-**Not yet built:**
-- **Desktop-responsive layout** — app is currently a fixed ~480px mobile shell (`.shell` in `OutreachApp.module.css`). Not started.
+**Done:**
+- **Desktop-responsive shell** — `.shell` in `OutreachApp.module.css` widens at breakpoints (640px viewport → 640px shell, 1024px viewport → 820px shell) rather than staying pinned at the mobile 480px max-width; `.header`/`.main` padding grows slightly alongside it. Same card-based layout throughout, just given more room on wider screens — no separate desktop design.
 
 ---
 

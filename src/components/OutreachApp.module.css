@@ -8,6 +8,26 @@
   overflow: hidden;
 }
 
+/* Same layout throughout - just given more room to breathe on wider
+   viewports rather than staying pinned to the mobile width. */
+@media (min-width: 640px) {
+  .shell {
+    max-width: 640px;
+  }
+  .header {
+    padding: 0 28px;
+  }
+  .main {
+    padding: 18px 28px 28px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    max-width: 820px;
+  }
+}
+
 /* Header */
 .header {
   flex-shrink: 0;
