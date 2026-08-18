@@ -45,6 +45,17 @@ export interface AppsScriptPayload {
     address?: string;
     addressConfirmedBy?: string;
     dateReviewed?: string;
+    // Research-field backfill (e.g. re-running reasoning for pending
+    // companies added with incomplete data) — same company-level upsert,
+    // just touching the research columns instead of the pipeline ones.
+    industry?: string;
+    companySize?: string;
+    outboundEvidence?: string;
+    recentNews?: string;
+    reasoning?: string;
+    contactName?: string;
+    position?: string;
+    url?: string;
   };
   experiment?: {
     testId: string;

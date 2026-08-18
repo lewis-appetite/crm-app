@@ -190,6 +190,19 @@ function doPost(e) {
         ['address', 'Address'],
         ['addressConfirmedBy', 'Address Confirmed By'],
         ['dateReviewed', 'Date Reviewed'],
+        // Research backfill fields - company-level upsert is only safe for
+        // these while the company has a single contact row (true for every
+        // still-Pending company, since Phase 2 contact search only runs
+        // post-approval). If a multi-contact company ever needs a
+        // contactName/position/url backfill, target it by rowIndex instead.
+        ['industry', 'Industry'],
+        ['companySize', 'Company Size'],
+        ['outboundEvidence', 'Outbound Evidence'],
+        ['recentNews', 'Recent News'],
+        ['reasoning', 'Reasoning'],
+        ['contactName', 'Contact Name'],
+        ['position', 'Position'],
+        ['url', 'LinkedIn URL'],
       ];
 
       for (var p = 1; p < pRows.length; p++) {
