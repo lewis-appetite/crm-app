@@ -104,11 +104,10 @@ Address hunting is manual and deliberately excluded from the research step.
 
 **Priority column sync** — `computePriorityLabel` mirrors the tier logic above but without the cadence gating (it's "why track this contact" not "due today", so it doesn't need daily rewrites). Written to col S whenever the underlying reason could have changed: `POST /api/sync-priority` (`{ company }`) recomputes and batch-writes every contact at that company after a campaign stage change; single-contact Reply changes (Today tab, All tab) write col S inline in the same request. `apps-script/Code.gs backfillPriorityColumn()` is the one-time initializer for existing rows.
 
-**Follow-up queue** (`getFollowUpQueue`) — contacts where:
+**Follow-up queue** (`getFollowUpQueue`, gated by the shared `isFollowUpDue` predicate) — contacts where:
 - `message` is set (initial message was sent)
-- Not dead (`reply` not in: dead lead, not interested, blocked, gone cold)
-- Not `reply === "interested"`
-- `daysAgo(lastContacted) >= FOLLOW_UP_INTERVAL_DAYS`
+- Not dead (`reply` not in: dead lead, not interested, wrong location/role/business, blocked, gone cold — i.e. `reply` is blank, Interested, or Yes)
+- `daysAgo(lastContacted) >= REPLIED_FOLLOW_UP_DAYS` (3) if they've replied Interested/Yes, else `>= FOLLOW_UP_INTERVAL_DAYS` (7) — a live conversation gets chased back up faster than cold no-reply outreach. Same threshold feeds `TierContact.followUpDue` in Focus.
 - Sorted: replied (Interested/Yes) before no-reply-yet, then longest-since-last-contacted first within each group. Client-side stable sort layers region time-of-day preference (same `regionSortRank` as New) and A/B-test pinning on top, see In-progress plan below.
 
 **New contacts queue** — contacts where:

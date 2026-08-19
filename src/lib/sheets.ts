@@ -716,12 +716,18 @@ export function businessDaysAgo(dateStr: string): number | null {
   return count;
 }
 
+// Once someone's replied (Interested/Yes), they're a live conversation, not
+// cold outreach — chase them back up faster than the standard cadence
+// rather than waiting the full no-reply interval.
+const REPLIED_FOLLOW_UP_DAYS = 3;
+
 export function isFollowUpDue(c: Contact, intervalDays: number): boolean {
   if (!c.message) return false;
   if (!FOLLOW_UP_WORTHY.includes(c.reply.toLowerCase())) return false;
   const days = daysAgo(c.lastContacted);
   if (days === null) return false;
-  return days >= intervalDays;
+  const threshold = c.reply ? REPLIED_FOLLOW_UP_DAYS : intervalDays;
+  return days >= threshold;
 }
 
 // focusedCompanyKeys (normalizeCompany'd) are excluded here — those contacts
