@@ -175,6 +175,13 @@
   min-width: 0;
 }
 
+.contactNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .contactName {
   font-size: 15px;
   font-weight: 500;
@@ -182,6 +189,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .contactMeta {

@@ -13,6 +13,7 @@ import {
   ProspectChannel,
   nextFollowUpStage, followUpFieldKey, FOLLOW_UP_MAX, FollowUpFieldKey, FOLLOW_UP_FIELD_KEYS,
   getRepliedQueue,
+  POSITIVE_REPLIES,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -1374,7 +1375,14 @@ export default function OutreachApp() {
               <div className={styles.cardTop}>
                 <div className={styles.avatar}>{initials}</div>
                 <div className={styles.contactInfo}>
-                  <div className={styles.contactName}>{contact!.fullName}</div>
+                  <div className={styles.contactNameRow}>
+                    <div className={styles.contactName}>{contact!.fullName}</div>
+                    {tab === 'followup' && contact!.reply && (
+                      <span className={`${styles.replyBadge} ${POSITIVE_REPLIES.includes(contact!.reply.toLowerCase()) ? styles.replyInterested : styles.replyOther}`}>
+                        {contact!.reply}
+                      </span>
+                    )}
+                  </div>
                   <div className={styles.contactMeta}>
                     {contact!.position}
                     {contact!.company && <> · <span>{contact!.company}</span></>}
