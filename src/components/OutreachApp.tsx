@@ -14,6 +14,7 @@ import {
   nextFollowUpStage, followUpFieldKey, FOLLOW_UP_MAX, FollowUpFieldKey, FOLLOW_UP_FIELD_KEYS,
   getRepliedQueue,
   POSITIVE_REPLIES,
+  normalizeCompany,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -294,6 +295,13 @@ export default function OutreachApp() {
   // each render since it only depends on wall-clock time, not fetched data
   const regionMode = getRegionMode();
 
+  // Companies shortlisted on the Focus tab - contacts there get top billing
+  // in Follow-ups and New too, not just within Focus itself.
+  const focusedCompanyKeys = new Set(
+    (data?.campaigns ?? []).filter(c => c.focus).map(c => normalizeCompany(c.company))
+  );
+  const isFocusedCompany = (company: string) => focusedCompanyKeys.has(normalizeCompany(company));
+
   // Sorted + filtered new contacts queue
   const sortedNewContacts = (() => {
     if (!data) return [];
@@ -304,11 +312,15 @@ export default function OutreachApp() {
         return true;
       })
       .sort((a, b) => {
-        // Primary: contacts with a cake image first
+        // Top priority: contacts at a Focus-shortlisted company
+        const aFocused = isFocusedCompany(a.company) ? 0 : 1;
+        const bFocused = isFocusedCompany(b.company) ? 0 : 1;
+        if (aFocused !== bFocused) return aFocused - bFocused;
+        // Then: contacts with a cake image
         const aHasCake = !!getCakeLink(a.company);
         const bHasCake = !!getCakeLink(b.company);
         if (aHasCake !== bHasCake) return aHasCake ? -1 : 1;
-        // Secondary: region matching the current time-of-day window
+        // Then: region matching the current time-of-day window
         const ra = regionSortRank(a.region, regionMode);
         const rb = regionSortRank(b.region, regionMode);
         if (ra !== rb) return ra - rb;
@@ -328,12 +340,15 @@ export default function OutreachApp() {
   }
 
   // Follow-ups arrive pre-sorted by cadence priority (server-side); a stable
-  // sort layers two things on top without disturbing that ordering within
-  // each bucket: contacts due at a stage with an active A/B test are pinned
-  // first (so they're not buried in the general queue), then region
-  // preference for the current time-of-day window
+  // sort layers three things on top without disturbing that ordering within
+  // each bucket: Focus-shortlisted companies first, then contacts due at a
+  // stage with an active A/B test (so they're not buried in the general
+  // queue), then region preference for the current time-of-day window
   const sortedFollowUps = data
     ? [...data.followUps].sort((a, b) => {
+        const aFocused = isFocusedCompany(a.company) ? 0 : 1;
+        const bFocused = isFocusedCompany(b.company) ? 0 : 1;
+        if (aFocused !== bFocused) return aFocused - bFocused;
         const aPinned = getActiveExperiment(data.experiments, followUpStageKey(a)) ? 0 : 1;
         const bPinned = getActiveExperiment(data.experiments, followUpStageKey(b)) ? 0 : 1;
         if (aPinned !== bPinned) return aPinned - bPinned;

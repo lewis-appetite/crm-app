@@ -14,7 +14,6 @@ import {
   getFocusSuggestions,
   getActiveSnoozes,
   buildConnectionsColumnMap,
-  normalizeCompany,
 } from '@/lib/sheets';
 import { fetchSheetRange } from '@/lib/sheetsApi';
 
@@ -43,8 +42,7 @@ export async function GET() {
     const experimentResults = experiments.map(e => computeExperimentResults(e, activity, contacts));
     const prospects = groupProspects(parseProspects(prospectRows), contacts, campaigns);
 
-    const focusedCompanyKeys = new Set(campaigns.filter(c => c.focus).map(c => normalizeCompany(c.company)));
-    const followUps = getFollowUpQueue(contacts, INTERVAL, focusedCompanyKeys);
+    const followUps = getFollowUpQueue(contacts, INTERVAL);
     const newContacts = getNewContactsQueue(contacts);
     const snoozes = getActiveSnoozes(activity);
     const focus = getFocusQueue(contacts, campaigns, CAKE_TOUCH_DAYS, HOT_TOUCH_DAYS, INTERVAL, snoozes);

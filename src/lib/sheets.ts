@@ -730,16 +730,16 @@ export function isFollowUpDue(c: Contact, intervalDays: number): boolean {
   return days >= threshold;
 }
 
-// focusedCompanyKeys (normalizeCompany'd) are excluded here — those contacts
-// surface in the Focus tab instead, badged "follow-up due", so they're never
-// shown in both places at once.
+// Focus-company contacts are included here too (not excluded) — they also
+// show in Focus with its own cadence tiers, but the client-side sort in
+// OutreachApp.tsx pins them to the top of this queue as well, per Lewis's
+// request to prioritize Focus-shortlisted companies across both tabs.
 export function getFollowUpQueue(
   contacts: Contact[],
-  intervalDays: number,
-  focusedCompanyKeys: Set<string> = new Set()
+  intervalDays: number
 ): Contact[] {
   return contacts
-    .filter(c => isFollowUpDue(c, intervalDays) && !focusedCompanyKeys.has(normalizeCompany(c.company)))
+    .filter(c => isFollowUpDue(c, intervalDays))
     .sort((a, b) => {
       // Replied contacts (Interested/Yes) come before no-reply-yet
       const aReplied = a.reply ? 0 : 1;
