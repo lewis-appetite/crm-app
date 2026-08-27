@@ -776,8 +776,9 @@ export function getRepliedQueue(contacts: Contact[]): Contact[] {
 }
 
 // Region-based time-of-day prioritization: UK waking hours favor UK contacts,
-// US waking hours favor US contacts. Blank region is never deprioritized
-// (still tagging in progress) - it sorts between the two, never last.
+// US waking hours favor US contacts. UK and US both outrank every other
+// country (and blank) regardless of which one matches the current window -
+// only the two of them ever get pushed to voicemail-hours targeting.
 const REGION_ALIASES: Record<string, 'uk' | 'us'> = {
   'united kingdom': 'uk',
   uk: 'uk',
@@ -800,8 +801,8 @@ export function getRegionMode(now: Date = new Date()): 'uk' | 'us' {
 
 export function regionSortRank(region: string, mode: 'uk' | 'us'): number {
   const r = normalizeRegion(region);
-  if (!r) return 1;
-  return r === mode ? 0 : 2;
+  if (!r) return 2; // blank or any other country - lowest priority
+  return r === mode ? 0 : 1; // matching time-zone first, then the other of UK/US
 }
 
 // Same normalization used for cake-image filename matching — reused here so
