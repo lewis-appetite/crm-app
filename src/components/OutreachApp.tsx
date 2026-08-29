@@ -15,6 +15,7 @@ import {
   getRepliedQueue,
   POSITIVE_REPLIES,
   normalizeCompany,
+  compareFollowUpCadence,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -339,20 +340,21 @@ export default function OutreachApp() {
     return !c.followUpMessage1 ? 'followup1' : 'followup2';
   }
 
-  // Follow-ups arrive pre-sorted by cadence priority (server-side); a stable
-  // sort layers three things on top without disturbing that ordering within
-  // each bucket: Focus-shortlisted companies first, then contacts due at a
-  // stage with an active A/B test (so they're not buried in the general
-  // queue), then region preference for the current time-of-day window
+  // Priority order: region/time-of-day, then Focus-shortlisted company, then
+  // the underlying cadence order (replied-first, longest-since-contacted),
+  // then active A/B test as the final tiebreaker.
   const sortedFollowUps = data
     ? [...data.followUps].sort((a, b) => {
+        const rr = regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode);
+        if (rr !== 0) return rr;
         const aFocused = isFocusedCompany(a.company) ? 0 : 1;
         const bFocused = isFocusedCompany(b.company) ? 0 : 1;
         if (aFocused !== bFocused) return aFocused - bFocused;
+        const cadence = compareFollowUpCadence(a, b);
+        if (cadence !== 0) return cadence;
         const aPinned = getActiveExperiment(data.experiments, followUpStageKey(a)) ? 0 : 1;
         const bPinned = getActiveExperiment(data.experiments, followUpStageKey(b)) ? 0 : 1;
-        if (aPinned !== bPinned) return aPinned - bPinned;
-        return regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode);
+        return aPinned - bPinned;
       })
     : [];
 

@@ -730,6 +730,20 @@ export function isFollowUpDue(c: Contact, intervalDays: number): boolean {
   return days >= threshold;
 }
 
+// Replied contacts (Interested/Yes) come before no-reply-yet, then longest
+// time since last contacted first. Exported so OutreachApp.tsx's client-side
+// stable sort can reapply this exact tier explicitly (rather than relying on
+// array order) once other criteria are interleaved above and below it.
+export function compareFollowUpCadence(a: Contact, b: Contact): number {
+  const aReplied = a.reply ? 0 : 1;
+  const bReplied = b.reply ? 0 : 1;
+  if (aReplied !== bReplied) return aReplied - bReplied;
+  const da = parseDate(a.lastContacted);
+  const db = parseDate(b.lastContacted);
+  if (!da || !db) return 0;
+  return da.getTime() - db.getTime();
+}
+
 // Focus-company contacts are included here too (not excluded) — they also
 // show in Focus with its own cadence tiers, but the client-side sort in
 // OutreachApp.tsx pins them to the top of this queue as well, per Lewis's
@@ -740,17 +754,7 @@ export function getFollowUpQueue(
 ): Contact[] {
   return contacts
     .filter(c => isFollowUpDue(c, intervalDays))
-    .sort((a, b) => {
-      // Replied contacts (Interested/Yes) come before no-reply-yet
-      const aReplied = a.reply ? 0 : 1;
-      const bReplied = b.reply ? 0 : 1;
-      if (aReplied !== bReplied) return aReplied - bReplied;
-      // Then longest time since last contacted first
-      const da = parseDate(a.lastContacted);
-      const db = parseDate(b.lastContacted);
-      if (!da || !db) return 0;
-      return da.getTime() - db.getTime();
-    });
+    .sort(compareFollowUpCadence);
 }
 
 export function getNewContactsQueue(contacts: Contact[]): Contact[] {
