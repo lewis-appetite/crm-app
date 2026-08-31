@@ -1473,10 +1473,10 @@ export default function OutreachApp() {
                     <span className={styles.detailValue}>{contact!.list}</span>
                   </div>
                 )}
-                {tab === 'new' && contact!.connectedOn && (
+                {tab === 'new' && contact!.region && (
                   <div className={styles.detailRow}>
-                    <span className={styles.detailLabel}>Connected</span>
-                    <span className={styles.detailValue}>{contact!.connectedOn}</span>
+                    <span className={styles.detailLabel}>Country</span>
+                    <span className={styles.detailValue}>{contact!.region}</span>
                   </div>
                 )}
                 {tab === 'followup' && (
