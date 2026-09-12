@@ -165,6 +165,13 @@ Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_T
 - **Root cause**: `parseDate` was trying `new Date(cleaned)` first, which parses `DD/MM/YYYY` as `MM/DD/YYYY` (JS assumes American format). Contacts last-contacted on day 1–12 had their dates swapped, making them appear more recent than reality — so they never crossed the 14-day threshold.
 - **Fix**: moved the `DD/MM/YYYY` slash-splitter before the JS `Date()` fallback in `parseDate`.
 
+### To revisit: ICP definition is fragmented across multiple places (2026-08)
+No single ICP document is the maintained source of truth. At least three independent copies exist and can drift apart:
+1. The scheduled "Appetite ICP Prospect Research" routine's prompt — a **frozen, embedded copy** of the criteria (firmographics, buyer persona, seniority ceiling, geography, exclusion signals). This is what actually drives which companies get surfaced into the Prospects tab.
+2. A **Google Doc** that was the original source when the routine was first built — the routine does not read it live, so doc edits require manually re-syncing into the routine's prompt (already happened once, for the "founding year" criterion).
+3. The user's separate persistent research chat (processes Crunchbase-sourced companies) — has its own understanding of the ICP built up from however it's been briefed over time, with no shared source with the above two.
+Needs a decision on a single maintained ICP source (likely the Google Doc, with the routine and any other consumer reading it live or re-synced on a defined cadence) rather than three copies that can silently diverge.
+
 ---
 
 ## Planned Changes (Phase 2/3 of gamification)
