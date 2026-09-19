@@ -168,6 +168,10 @@ export default function OutreachApp() {
   const [newFilterList, setNewFilterList] = useState('');
   const [newFilterFunction, setNewFilterFunction] = useState('');
 
+  // Manual override for which region sorts first - null means "follow the
+  // UK/US time-of-day banding automatically" (the default every fresh load).
+  const [regionOverride, setRegionOverride] = useState<'uk' | 'us' | null>(null);
+
   // Today tab
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const seededExpand = useRef(false);
@@ -292,9 +296,11 @@ export default function OutreachApp() {
     return getCake(company)?.viewLink ?? null;
   }
 
-  // 06:00-21:59 favors UK contacts, 22:00-05:59 favors US contacts - recomputed
-  // each render since it only depends on wall-clock time, not fetched data
-  const regionMode = getRegionMode();
+  // 06:00-21:59 favors UK contacts, 22:00-05:59 favors US contacts by default
+  // - recomputed each render since it only depends on wall-clock time, not
+  // fetched data. regionOverride lets the header chip pin one region instead.
+  const autoRegionMode = getRegionMode();
+  const regionMode = regionOverride ?? autoRegionMode;
 
   // Companies shortlisted on the Focus tab - contacts there get top billing
   // in Follow-ups and New too, not just within Focus itself.
@@ -1144,9 +1150,17 @@ export default function OutreachApp() {
             <GoalRing value={todayNew} max={dailyNewGoal} label="New today" />
             <GoalRing value={stats.todayFollowUps} max={followUpsDueTotal} label="Follow-ups" />
             <div className={styles.goalBarRight}>
-              <span className={styles.regionChip} title="Which region's contacts are sorted first right now">
-                {regionMode === 'uk' ? '🇬🇧 UK hours' : '🇺🇸 US hours'}
-              </span>
+              <button
+                className={`${styles.regionChip} ${regionOverride ? styles.regionChipOverride : ''}`}
+                onClick={() => setRegionOverride(prev => (prev === null ? 'uk' : prev === 'uk' ? 'us' : null))}
+                title={
+                  regionOverride
+                    ? `Manually prioritizing ${regionOverride === 'uk' ? 'UK' : 'US'} contacts — click to cycle (tap again for the other region, once more to return to automatic time-of-day banding)`
+                    : "Following UK/US time-of-day banding automatically — click to manually prioritize a region"
+                }
+              >
+                {regionMode === 'uk' ? '🇬🇧 UK' : '🇺🇸 US'} {regionOverride ? 'priority' : 'hours'}
+              </button>
               {combo >= 2 && <span className={styles.comboChip}>⚡ {combo}</span>}
               <span className={`${styles.streakChip} ${stats.streak === 0 ? styles.streakZero : ''}`}>
                 🔥 {stats.streak}
