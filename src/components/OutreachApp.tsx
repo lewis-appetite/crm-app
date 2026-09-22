@@ -1034,10 +1034,13 @@ export default function OutreachApp() {
 
     const prevContact = data.allContacts.find(c => c.rowIndex === editingRowIndex);
     const replyChanged = !!prevContact && editValues.reply !== prevContact.reply;
-    const becameInterested =
+    const newReplyLower = editValues.reply.toLowerCase();
+    const oldReplyLower = prevContact?.reply.toLowerCase() ?? '';
+    const CELEBRATED_REPLIES = ['interested', 'opportunity'];
+    const becameCelebrated =
       replyChanged &&
-      editValues.reply.toLowerCase() === 'interested' &&
-      prevContact!.reply.toLowerCase() !== 'interested';
+      CELEBRATED_REPLIES.includes(newReplyLower) &&
+      newReplyLower !== oldReplyLower;
     const creditedTemplate =
       [...FOLLOW_UP_FIELD_KEYS].reverse().map(k => editValues[k]).find(Boolean) || editValues.message || '';
 
@@ -1082,16 +1085,19 @@ export default function OutreachApp() {
       newContacts: data.newContacts.map(updateContact),
     });
 
-    if (becameInterested && prevContact) {
+    if (becameCelebrated && prevContact) {
       const s = creditedTemplate
         ? getMessageStats(updatedAll, data.messages).find(m => normAbbr(m.abbreviation) === normAbbr(creditedTemplate))
         : undefined;
+      const isOpportunity = newReplyLower === 'opportunity';
       setCelebration({
-        title: '🎉 Interested!',
+        title: isOpportunity ? '🎉 Opportunity!' : '🎉 Interested!',
         detail:
           s && s.sent > 0
             ? `'${creditedTemplate}' is now at ${Math.round((s.replied / s.sent) * 100)}% reply rate (${s.replied}/${s.sent})`
-            : `${prevContact.fullName} is interested`,
+            : isOpportunity
+              ? `${prevContact.fullName} at ${prevContact.company} is a genuine opportunity`
+              : `${prevContact.fullName} is interested`,
       });
     }
 
