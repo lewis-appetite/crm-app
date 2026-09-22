@@ -154,7 +154,7 @@ Moved into a "⋯" menu (still the same `Tab` values under the hood, see `MORE_T
 - **Goal bar** (all tabs): progress rings for New today / Follow-ups today, streak flame, combo chip
 - **Streak**: goal-based (≥ DAILY_NEW_GOAL new sends) for days covered by the Activity log; any-activity for earlier days
 - **Send flow**: card shows suggested template pre-personalised → "Copy & open LinkedIn" → "Sent" logs template + date + Activity row, auto-advances, builds combo (resets on tab switch)
-- **Celebrations**: confetti overlay on hitting the daily goal and on logging an "Interested" reply (shows the template's updated reply rate)
+- **Celebrations**: confetti overlay on hitting the daily goal and on logging an "Interested" or "Opportunity" reply from the All tab's inline edit (shows the template's updated reply rate) — note this specific celebration trigger is narrower than `POSITIVE_REPLIES` (which also includes "Yes" for stats/badges/cadence purposes elsewhere in the app); "Yes" deliberately doesn't celebrate.
 - If no template is explicitly picked, "Sent" credits the suggested template shown on the card
 
 ---
