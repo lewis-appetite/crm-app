@@ -319,18 +319,20 @@ export default function OutreachApp() {
         return true;
       })
       .sort((a, b) => {
-        // Top priority: contacts at a Focus-shortlisted company
-        const aFocused = isFocusedCompany(a.company) ? 0 : 1;
-        const bFocused = isFocusedCompany(b.company) ? 0 : 1;
-        if (aFocused !== bFocused) return aFocused - bFocused;
-        // Then: contacts with a cake image
-        const aHasCake = !!getCakeLink(a.company);
-        const bHasCake = !!getCakeLink(b.company);
-        if (aHasCake !== bHasCake) return aHasCake ? -1 : 1;
-        // Then: region matching the current time-of-day window
+        // Top priority: region matching the current time-of-day window -
+        // consistent with Follow-ups, a same-region contact always outranks
+        // an out-of-region one regardless of cake-readiness or Focus status
         const ra = regionSortRank(a.region, regionMode);
         const rb = regionSortRank(b.region, regionMode);
         if (ra !== rb) return ra - rb;
+        // Then: contacts at a Focus-shortlisted company
+        const aFocused = isFocusedCompany(a.company) ? 0 : 1;
+        const bFocused = isFocusedCompany(b.company) ? 0 : 1;
+        if (aFocused !== bFocused) return aFocused - bFocused;
+        // Then: contacts with a cake image ready to send
+        const aHasCake = !!getCakeLink(a.company);
+        const bHasCake = !!getCakeLink(b.company);
+        if (aHasCake !== bHasCake) return aHasCake ? -1 : 1;
         // Tertiary: user-chosen sort
         if (newSort === 'az') return a.company.localeCompare(b.company);
         const da = parseDate(a.connectedOn);
