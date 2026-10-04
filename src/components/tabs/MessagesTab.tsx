@@ -22,17 +22,26 @@ export default function MessagesTab({ allContacts, messages }: { allContacts: Co
   const stats: MessageStats[] = getMessageStats(allContacts, messages);
   const statsMap = Object.fromEntries(stats.map(s => [s.abbreviation, s]));
 
-  // Group by messageType, sorted by reply rate desc within each group
-  const groups = Array.from(new Set(messages.map(m => m.messageType))).map(type => ({
-    type,
-    messages: messages
-      .filter(m => m.messageType === type)
-      .sort((a, b) => {
-        const ra = statsMap[a.abbreviation]?.replyRate ?? -1;
-        const rb = statsMap[b.abbreviation]?.replyRate ?? -1;
-        return rb - ra;
-      }),
-  }));
+  const GROUP_ORDER = ['initial outreach', 'follow up'];
+  const groupRank = (type: string) => {
+    const i = GROUP_ORDER.indexOf(type.trim().toLowerCase());
+    return i === -1 ? GROUP_ORDER.length : i;
+  };
+
+  // Initial Outreach first, then Follow Up (anything else after), reply rate desc within each group
+  const groups = Array.from(new Set(messages.map(m => m.messageType)))
+    .sort((a, b) => groupRank(a) - groupRank(b))
+    .map(type => ({
+      type,
+      messages: messages
+        .filter(m => m.messageType === type)
+        .sort((a, b) => {
+          const ra = statsMap[a.abbreviation]?.replyRate ?? -1;
+          const rb = statsMap[b.abbreviation]?.replyRate ?? -1;
+          return rb - ra;
+        }),
+    }));
+  const sortedMessages = groups.flatMap(g => g.messages);
 
   return (
     <div className={styles.messagesList}>
@@ -71,7 +80,7 @@ export default function MessagesTab({ allContacts, messages }: { allContacts: Co
           ))}
         </div>
       ) : (
-        messages.map((msg, i) => {
+        sortedMessages.map((msg, i) => {
           const s = statsMap[msg.abbreviation];
           return (
             <div key={i} className={styles.messageItem}>
