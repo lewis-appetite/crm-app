@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Contact, Message, SuggestedMessage, ActivityEvent, CompanyGroup, Tier, CampaignEntry,
   suggestMessage, daysAgo, parseDate, todayDMY, isCampaignActive, computePriorityLabel,
-  getMessageStats, normAbbr,
+  getMessageStats, normAbbr, attributeSends, ReplyStage,
   getStats, Stats, CAMPAIGN_STAGES,
   getRegionMode, regionSortRank,
   Experiment, ExperimentResults, ExperimentStage,
@@ -205,6 +205,10 @@ export default function OutreachApp() {
     } catch { /* storage unavailable - nothing hidden */ }
   }, []);
 
+  const attributedSends = useMemo(
+    () => (data ? attributeSends(data.allContacts, [...(data.activity ?? []), ...localEvents]).sends : []),
+    [data, localEvents]
+  );
   const messageKey = (m: { messageType: string; abbreviation: string }) => `${m.messageType}|${normAbbr(m.abbreviation)}`;
   const messages = (data?.messages ?? []).map(m => ({ ...m, hidden: hiddenMessageKeys.has(messageKey(m)) }));
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -430,7 +434,14 @@ export default function OutreachApp() {
 
   const baseSuggestion: SuggestedMessage | null =
     contact && data
-      ? suggestMessage(contact, data.allContacts, messages, tab === 'followup')
+      ? suggestMessage(
+          contact,
+          data.allContacts,
+          messages,
+          tab === 'followup',
+          attributedSends,
+          tab === 'new' ? 'new' : followUpStage <= FOLLOW_UP_MAX ? (`followup${followUpStage}` as ReplyStage) : null
+        )
       : null;
 
   // Overrides the normal reply-rate-based suggestion with this contact's

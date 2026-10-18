@@ -118,7 +118,7 @@ Address hunting is manual and deliberately excluded from the research step.
 
 **Replied queue** (`getRepliedQueue`) — every contact with `reply` in Interested/Yes and no `Call booked`, sorted oldest-last-contacted first. Deliberately not cadence-gated like Follow-ups (`FOLLOW_UP_INTERVAL_DAYS` doesn't apply) — this is the "don't lose track of a live conversation" view, surfaced as the **Replied** tab in the "⋯" menu. A contact drops off the moment a meeting is booked or the reply is changed away from Interested/Yes. Its "Log follow-up" button calls the same `handleFocusDone(c)` as Focus's "Done" button — one click writes a `One-off` template into the next open Follow Up Message slot and bumps `Follow ups`/`Last Contacted`, no note or comment involved.
 
-**AI suggestion** — for a given contact, looks at contacts with similar role/function, finds the template abbreviation with the highest reply rate (min 2 data points), returns it with a reply rate %.
+**AI suggestion** (`suggestMessage`) — picks the unused, un-hidden template with the best win rate using the same `attributeSends` attribution as the Messages screen, tried in tiers: similar role/function at this contact's own stage → everyone at this stage → everyone across stages. A tier only counts a template with ≥ `SUGGESTION_MIN_SENDS` (20) sends (2/2 = "100%" is luck, not signal); if no tier qualifies it falls back to the first unused template with no rate shown. Every `One-off*` variant (One-off, One-off (FU1)/(FU2)/(X)) is excluded — bespoke text the app never sees (the manual picker still lists them so they can be logged).
 
 ## API Routes
 

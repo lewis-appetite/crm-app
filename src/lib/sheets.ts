@@ -662,8 +662,10 @@ export function followUpFieldKey(stage: number): FollowUpFieldKey | null {
 
 // "One-off" is a placeholder for custom messages, not a real template —
 // it stays in stats for comparison but is never suggested
+// "One-off", "One-off (FU1)", "One-off (X)" ... are all bespoke messages whose
+// text the app never sees, so none of them is a repeatable template to suggest
 function isOneOff(abbr: string): boolean {
-  return normAbbr(abbr) === 'oneoff';
+  return normAbbr(abbr).startsWith('oneoff');
 }
 
 // Replies that still warrant a follow-up
@@ -999,11 +1001,17 @@ export function getFocusSuggestions(contacts: Contact[], campaigns: CampaignEntr
   return Array.from(candidates.values()).sort((a, b) => a.localeCompare(b));
 }
 
+// Samples this small can't separate a good template from a lucky one (2/2 =
+// "100%"), so the suggestion ignores any tier below this many sends
+const SUGGESTION_MIN_SENDS = 20;
+
 export function suggestMessage(
   contact: Contact,
   allContacts: Contact[],
   messages: Message[],
-  isFollowUp: boolean
+  isFollowUp: boolean,
+  sends: AttributedSend[] = [],
+  stage: ReplyStage | null = null
 ): SuggestedMessage | null {
   // Never suggest a template this contact has already received
   const alreadySent = new Set(
@@ -1017,62 +1025,64 @@ export function suggestMessage(
 
   const roleKeyword = contact.position.toLowerCase().split(' ')[0];
   const func = contact.function.toLowerCase();
+  const isSimilar = (c: Contact) =>
+    (!!roleKeyword && c.position.toLowerCase().includes(roleKeyword)) || (!!func && c.function.toLowerCase() === func);
 
-  const similarStats: Record<string, { sent: number; replied: number }> = {};
-  const overallStats: Record<string, { sent: number; replied: number }> = {};
-  const bump = (stats: Record<string, { sent: number; replied: number }>, abbr: string, replied: boolean) => {
-    if (!stats[abbr]) stats[abbr] = { sent: 0, replied: 0 };
-    stats[abbr].sent++;
-    if (replied) stats[abbr].replied++;
+  type Tally = { sent: number; replied: number };
+  const candidateKeys = new Set(candidates.map(m => normAbbr(m.abbreviation)));
+  const tally = (match: (s: AttributedSend) => boolean): Record<string, Tally> => {
+    const out: Record<string, Tally> = {};
+    sends.forEach(s => {
+      const key = normAbbr(s.template);
+      if (!candidateKeys.has(key) || !match(s)) return;
+      const t = out[key] || (out[key] = { sent: 0, replied: 0 });
+      t.sent++;
+      if (s.credited && MESSAGE_WIN_REPLIES.includes(s.contact.reply.toLowerCase())) t.replied++;
+    });
+    return out;
   };
 
-  allContacts.forEach(c => {
-    const abbrs = isFollowUp
-      ? followUpMessages(c)
-      : c.message ? [c.message] : [];
-    if (abbrs.length === 0) return;
+  // Same attribution as the Messages screen (dated replies credit one send),
+  // judged at this contact's own stage first: best for similar roles at this
+  // stage -> best overall at this stage -> best overall across stages
+  const atStage = (s: AttributedSend) => stage === null || s.stage === stage;
+  const tiers = [
+    tally(s => atStage(s) && isSimilar(s.contact)),
+    tally(atStage),
+    tally(() => true),
+  ];
 
-    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    const cRole = c.position.toLowerCase();
-    const cFunc = c.function.toLowerCase();
-    const isSimilar =
-      (roleKeyword && cRole.includes(roleKeyword)) ||
-      (func && cFunc === func);
-
-    abbrs.forEach(abbr => {
-      bump(overallStats, normAbbr(abbr), isPositive);
-      if (isSimilar) bump(similarStats, normAbbr(abbr), isPositive);
-    });
-  });
-
-  const pickBest = (stats: Record<string, { sent: number; replied: number }>): string | null => {
+  for (const stats of tiers) {
     let best: string | null = null;
     let bestRate = -1;
     candidates.forEach(m => {
-      const s = stats[normAbbr(m.abbreviation)];
-      if (!s || s.sent < 2) return; // need at least 2 data points
-      const rate = s.replied / s.sent;
+      const t = stats[normAbbr(m.abbreviation)];
+      if (!t || t.sent < SUGGESTION_MIN_SENDS) return;
+      const rate = t.replied / t.sent;
       if (rate > bestRate) {
         bestRate = rate;
         best = m.abbreviation;
       }
     });
-    return best;
-  };
+    if (best) {
+      const t = stats[normAbbr(best)];
+      return {
+        abbreviation: best,
+        fullMessage: personalise(candidates.find(m => m.abbreviation === best)!.fullMessage, contact),
+        replyRate: Math.round((t.replied / t.sent) * 100),
+        sentCount: t.sent,
+        repliedCount: t.replied,
+      };
+    }
+  }
 
-  // Best for similar roles → best overall → first unused template of the right type
-  const chosenAbbr = pickBest(similarStats) || pickBest(overallStats) || candidates[0].abbreviation;
-  const messageRecord = candidates.find(m => m.abbreviation === chosenAbbr)!;
-
-  const s = similarStats[normAbbr(chosenAbbr)] ?? overallStats[normAbbr(chosenAbbr)];
-  const replyRate = s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null;
-
+  // Not enough data anywhere yet: first unused template, with no rate claimed
   return {
-    abbreviation: chosenAbbr,
-    fullMessage: personalise(messageRecord.fullMessage, contact),
-    replyRate,
-    sentCount: s?.sent ?? 0,
-    repliedCount: s?.replied ?? 0,
+    abbreviation: candidates[0].abbreviation,
+    fullMessage: personalise(candidates[0].fullMessage, contact),
+    replyRate: null,
+    sentCount: 0,
+    repliedCount: 0,
   };
 }
 
