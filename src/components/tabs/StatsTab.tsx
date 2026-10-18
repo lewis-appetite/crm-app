@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Stats, Contact, ReplyStage, getReplyBreakdown } from '@/lib/sheets';
+import { Stats, Contact, ActivityEvent, ReplyStage, getReplyBreakdown } from '@/lib/sheets';
 import styles from '../OutreachApp.module.css';
 
 function delta(a: number, b: number) {
@@ -44,12 +44,12 @@ function RateRow({
   );
 }
 
-export default function StatsTab({ stats, allContacts }: { stats: Stats; allContacts: Contact[] }) {
+export default function StatsTab({ stats, allContacts, activity }: { stats: Stats; allContacts: Contact[]; activity: ActivityEvent[] }) {
   const { todayCount, todayNew: tNew, todayFollowUps: tFu, streak, thisWeek, lastWeek, sixWeeks, replyRates } = stats;
   const maxBar = Math.max(...sixWeeks.map(w => w.total), 1);
   const [expandedStage, setExpandedStage] = useState<ReplyStage | null>(null);
 
-  const breakdown = getReplyBreakdown(allContacts);
+  const breakdown = getReplyBreakdown(allContacts, activity);
   const breakdownByStage = (stage: ReplyStage) => breakdown.filter(r => r.stage === stage);
 
   return (

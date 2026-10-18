@@ -1089,7 +1089,7 @@ export default function OutreachApp() {
 
     if (becameCelebrated && prevContact) {
       const s = creditedTemplate
-        ? getMessageStats(updatedAll, data.messages).find(m => normAbbr(m.abbreviation) === normAbbr(creditedTemplate))
+        ? getMessageStats(updatedAll, data.messages, [...(data.activity ?? []), ...localEvents]).find(m => normAbbr(m.abbreviation) === normAbbr(creditedTemplate))
         : undefined;
       const isOpportunity = newReplyLower === 'opportunity';
       setCelebration({
@@ -1238,7 +1238,7 @@ export default function OutreachApp() {
 
         /* ── STATS TAB ── */
         : tab === 'stats' ? (
-          stats ? <StatsTab stats={stats} allContacts={data?.allContacts ?? []} /> : null
+          stats ? <StatsTab stats={stats} allContacts={data?.allContacts ?? []} activity={[...(data?.activity ?? []), ...localEvents]} /> : null
         )
 
         /* ── ALL CONTACTS TAB ── */
@@ -1259,7 +1259,7 @@ export default function OutreachApp() {
 
         /* ── MESSAGES TAB ── */
         : tab === 'messages' ? (
-          <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} />
+          <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} activity={[...(data?.activity ?? []), ...localEvents]} />
         )
 
         /* ── PROSPECTS TAB ── */

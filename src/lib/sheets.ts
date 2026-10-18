@@ -1083,33 +1083,142 @@ function personalise(template: string, contact: Contact): string {
     .replace(/XX/gi, contact.position || 'professional');
 }
 
-export interface MessageStats {
-  abbreviation: string;
-  sent: number; // true total times this template was used, ever
+export interface AttributedSend {
+  stage: ReplyStage;
+  template: string;
+  contact: Contact;
+  credited: boolean; // the one send this contact's reply is attributed to
+}
+
+// One record per template send (contact x stage), with each reply credited to
+// a single send instead of every template in the contact's sequence. Sends made
+// AFTER the contact replied are dropped entirely - messaging someone who has
+// already replied isn't a cold test of that template.
+//
+// The Reply column has no date, so the Activity log supplies it: the reply is
+// credited to the last send on or before the date of the contact's most recent
+// matching `reply` event. Sends without a logged date predate the log, and so
+// (since the reply itself is logged) predate the reply. A reply with no log
+// entry (set directly in the sheet, or pre-log) can't be dated, so it is
+// assumed to answer the contact's FIRST send (dated positive replies mostly
+// land straight after the initial message), and their later sends are dropped
+// as post-reply. Leaving these contacts out instead would remove repliers from
+// the rates while keeping every non-replier, biasing every rate downward.
+export interface AttributionResult {
+  sends: AttributedSend[];
+  unattributedReplies: number;
+}
+
+export function attributeSends(contacts: Contact[], activity: ActivityEvent[]): AttributionResult {
+  const eventsByRow = new Map<number, ActivityEvent[]>();
+  activity.forEach(e => {
+    const list = eventsByRow.get(e.rowIndex);
+    if (list) list.push(e);
+    else eventsByRow.set(e.rowIndex, [e]);
+  });
+
+  const latestTime = (events: ActivityEvent[], pred: (e: ActivityEvent) => boolean): number | null => {
+    let best: number | null = null;
+    events.forEach(e => {
+      if (!pred(e)) return;
+      const t = parseDate(e.date)?.getTime();
+      if (t !== undefined && (best === null || t > best)) best = t;
+    });
+    return best;
+  };
+
+  const out: AttributedSend[] = [];
+  let unattributedReplies = 0;
+  contacts.forEach(c => {
+    const events = eventsByRow.get(c.rowIndex) ?? [];
+    const sends = [
+      { stage: 'new' as ReplyStage, template: c.message },
+      ...FOLLOW_UP_FIELD_KEYS.map((k, i) => ({ stage: `followup${i + 1}` as ReplyStage, template: c[k] })),
+    ]
+      .filter(s => s.template)
+      .map(s => ({ ...s, time: latestTime(events, e => e.action === s.stage) }));
+
+    // Dead lead / Wrong location / Blocked etc. are the sender's own call, not a
+    // reply from the contact - those sends all count as unanswered
+    const reply = c.reply.toLowerCase();
+    if (!REPLY_BREAKDOWN_ANY.includes(reply)) {
+      sends.forEach(s => out.push({ stage: s.stage, template: s.template, contact: c, credited: false }));
+      return;
+    }
+
+    const replyTime = latestTime(events, e => e.action === 'reply' && e.detail.toLowerCase() === reply);
+    if (replyTime === null) {
+      if (sends.length > 0) {
+        unattributedReplies++;
+        out.push({ stage: sends[0].stage, template: sends[0].template, contact: c, credited: true });
+      }
+      return;
+    }
+    const exposed = sends.filter(s => s.time === null || s.time <= replyTime);
+    exposed.forEach((s, i) =>
+      out.push({ stage: s.stage, template: s.template, contact: c, credited: i === exposed.length - 1 })
+    );
+  });
+  return { sends: out, unattributedReplies };
+}
+
+// What counts as a "win" for template performance. Broader than POSITIVE_REPLIES
+// (which also drives follow-up cadence/Tier 2/badges, so can't change here):
+// Opportunity and Client are the best outcomes a message can produce. Referred
+// is a reply but not interest, so it stays out.
+const MESSAGE_WIN_REPLIES = ['interested', 'yes', 'opportunity', 'client'];
+
+export interface MessageStageStats {
+  stage: ReplyStage;
+  sent: number;
   replied: number;
   replyRate: number | null; // replied / sent
 }
 
-export function getMessageStats(contacts: Contact[], messages: Message[]): MessageStats[] {
-  const stats: Record<string, { sent: number; replied: number }> = {};
+export interface MessageStats {
+  abbreviation: string;
+  sent: number; // sends before any reply, across all stages
+  replied: number;
+  replyRate: number | null; // replied / sent, blended across every stage the template was used at
+  byStage: MessageStageStats[]; // same numbers split by the stage each send happened at
+}
 
-  contacts.forEach(c => {
-    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    [c.message, ...followUpMessages(c)].filter(Boolean).forEach(abbr => {
-      const key = normAbbr(abbr);
-      if (!stats[key]) stats[key] = { sent: 0, replied: 0 };
-      stats[key].sent++;
-      if (isPositive) stats[key].replied++;
-    });
+function stageOrder(stage: ReplyStage): number {
+  return stage === 'new' ? 0 : parseInt(stage.slice('followup'.length), 10);
+}
+
+export function getMessageStats(
+  contacts: Contact[],
+  messages: Message[],
+  activity: ActivityEvent[] = []
+): MessageStats[] {
+  const stats = new Map<string, Map<ReplyStage, { sent: number; replied: number }>>();
+
+  attributeSends(contacts, activity).sends.forEach(s => {
+    const key = normAbbr(s.template);
+    if (!stats.has(key)) stats.set(key, new Map());
+    const stages = stats.get(key)!;
+    if (!stages.has(s.stage)) stages.set(s.stage, { sent: 0, replied: 0 });
+    const g = stages.get(s.stage)!;
+    g.sent++;
+    if (s.credited && MESSAGE_WIN_REPLIES.includes(s.contact.reply.toLowerCase())) g.replied++;
   });
 
+  const rate = (g: { sent: number; replied: number }) =>
+    g.sent >= 2 ? Math.round((g.replied / g.sent) * 100) : null;
+
   return messages.map(m => {
-    const s = stats[normAbbr(m.abbreviation)];
+    const stages = stats.get(normAbbr(m.abbreviation));
+    const byStage: MessageStageStats[] = Array.from(stages ?? [])
+      .map(([stage, g]) => ({ stage, sent: g.sent, replied: g.replied, replyRate: rate(g) }))
+      .sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage));
+    const total = byStage.reduce((t, g) => ({ sent: t.sent + g.sent, replied: t.replied + g.replied }), { sent: 0, replied: 0 });
     return {
       abbreviation: m.abbreviation,
-      sent: s?.sent ?? 0,
-      replied: s?.replied ?? 0,
-      replyRate: s && s.sent >= 2 ? Math.round((s.replied / s.sent) * 100) : null,
+      sent: total.sent,
+      replied: total.replied,
+      replyRate: rate(total),
+      byStage,
     };
   });
 }
@@ -1119,7 +1228,7 @@ export function getMessageStats(contacts: Contact[], messages: Message[]): Messa
 // used for follow-up-cadence/Tier-2 gating). This is a reporting split only,
 // scoped to this breakdown, not a change to how those contacts are treated
 // elsewhere in the app.
-const REPLY_BREAKDOWN_POSITIVE = ['interested', 'yes', 'referred', 'opportunity'];
+const REPLY_BREAKDOWN_POSITIVE = ['interested', 'yes', 'referred', 'opportunity', 'client'];
 // "Did they reply at all" - excludes Blocked and the disqualification-only
 // values (Dead lead/Wrong location/Wrong role/Wrong business), since those
 // are the sender's own call, not something the contact said.
@@ -1143,23 +1252,18 @@ export interface ReplyBreakdownRow {
 // Per-template, per-stage reply/positive-reply rates, split by stage
 // (new/followup1/followup2/...) instead of merged into one "Follow Up"
 // bucket, since a template can be used at any follow-up stage.
-export function getReplyBreakdown(contacts: Contact[]): ReplyBreakdownRow[] {
+export function getReplyBreakdown(contacts: Contact[], activity: ActivityEvent[] = []): ReplyBreakdownRow[] {
   const groups = new Map<string, { stage: ReplyStage; template: string; sent: number; replied: number; positive: number }>();
 
-  function record(stage: ReplyStage, templateRaw: string, c: Contact) {
-    if (!templateRaw) return;
-    const key = `${stage}|${normAbbr(templateRaw)}`;
-    if (!groups.has(key)) groups.set(key, { stage, template: templateRaw, sent: 0, replied: 0, positive: 0 });
+  attributeSends(contacts, activity).sends.forEach(s => {
+    const key = `${s.stage}|${normAbbr(s.template)}`;
+    if (!groups.has(key)) groups.set(key, { stage: s.stage, template: s.template, sent: 0, replied: 0, positive: 0 });
     const g = groups.get(key)!;
     g.sent++;
-    const r = c.reply.toLowerCase();
+    if (!s.credited) return;
+    const r = s.contact.reply.toLowerCase();
     if (REPLY_BREAKDOWN_ANY.includes(r)) g.replied++;
     if (REPLY_BREAKDOWN_POSITIVE.includes(r)) g.positive++;
-  }
-
-  contacts.forEach(c => {
-    if (c.message) record('new', c.message, c);
-    FOLLOW_UP_FIELD_KEYS.forEach((key, i) => record(`followup${i + 1}`, c[key], c));
   });
 
   return Array.from(groups.values())
@@ -1330,12 +1434,9 @@ export function getStats(contacts: Contact[], activity: ActivityEvent[] = [], da
   };
   const initialStage: StageAccum = { sent: 0, replied: 0 };
   const followUpStages: StageAccum[] = FOLLOW_UP_FIELD_KEYS.map(() => ({ sent: 0, replied: 0 }));
-  contacts.forEach(c => {
-    const isPositive = POSITIVE_REPLIES.includes(c.reply.toLowerCase());
-    if (c.message) bump(initialStage, isPositive);
-    FOLLOW_UP_FIELD_KEYS.forEach((key, i) => {
-      if (c[key]) bump(followUpStages[i], isPositive);
-    });
+  attributeSends(contacts, activity).sends.forEach(s => {
+    const isPositive = s.credited && MESSAGE_WIN_REPLIES.includes(s.contact.reply.toLowerCase());
+    bump(s.stage === 'new' ? initialStage : followUpStages[stageOrder(s.stage) - 1], isPositive);
   });
 
   const toRate = (s: StageAccum): StageRate => ({
