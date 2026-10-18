@@ -108,7 +108,7 @@ Address hunting is manual and deliberately excluded from the research step.
 - `message` is set (initial message was sent)
 - Not dead (`reply` not in: dead lead, not interested, wrong location/role/business, blocked, gone cold — i.e. `reply` is blank, Interested, or Yes)
 - `daysAgo(lastContacted) >= REPLIED_FOLLOW_UP_DAYS` (3) if they've replied Interested/Yes, else `>= FOLLOW_UP_INTERVAL_DAYS` (7) — a live conversation gets chased back up faster than cold no-reply outreach. Same threshold feeds `TierContact.followUpDue` in Focus.
-- Sorted (client-side, `OutreachApp.tsx`, explicit tiers — not relying on array stability): 1) region/time-of-day preference (same `regionSortRank` as New), 2) Focus-shortlisted company, 3) underlying cadence order (replied before no-reply-yet, then longest-since-last-contacted — `compareFollowUpCadence` in `sheets.ts`, shared with `getFollowUpQueue`'s own base sort), 4) active A/B test as the final tiebreaker.
+- Sorted (client-side, `OutreachApp.tsx`, explicit tiers — not relying on array stability): 1) region/time-of-day preference (same `regionSortRank` as New), 2) Focus-shortlisted company, 3) already-replied before no-reply-yet, 4) next follow-up stage ascending (`nextFollowUpStage` — groups each stage into one consecutive run so the same message can be sent back-to-back; stage only, deliberately not the suggested template), 5) longest-since-last-contacted within the stage (`compareFollowUpCadence` in `sheets.ts`, shared with `getFollowUpQueue`'s own base sort), 6) active A/B test as the final tiebreaker.
 
 **New contacts queue** — contacts where:
 - `message` is empty AND `lastContacted` is empty AND not dead

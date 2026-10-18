@@ -349,8 +349,9 @@ export default function OutreachApp() {
   }
 
   // Priority order: region/time-of-day, then Focus-shortlisted company, then
-  // the underlying cadence order (replied-first, longest-since-contacted),
-  // then active A/B test as the final tiebreaker.
+  // already-replied contacts, then which follow-up they're due next (lowest
+  // first, so each stage is one consecutive run of the same message), then
+  // longest-since-contacted within that stage, then active A/B test.
   const sortedFollowUps = data
     ? [...data.followUps].sort((a, b) => {
         const rr = regionSortRank(a.region, regionMode) - regionSortRank(b.region, regionMode);
@@ -358,6 +359,11 @@ export default function OutreachApp() {
         const aFocused = isFocusedCompany(a.company) ? 0 : 1;
         const bFocused = isFocusedCompany(b.company) ? 0 : 1;
         if (aFocused !== bFocused) return aFocused - bFocused;
+        const aReplied = a.reply ? 0 : 1;
+        const bReplied = b.reply ? 0 : 1;
+        if (aReplied !== bReplied) return aReplied - bReplied;
+        const stage = (nextFollowUpStage(a) ?? FOLLOW_UP_MAX + 1) - (nextFollowUpStage(b) ?? FOLLOW_UP_MAX + 1);
+        if (stage !== 0) return stage;
         const cadence = compareFollowUpCadence(a, b);
         if (cadence !== 0) return cadence;
         const aPinned = getActiveExperiment(data.experiments, followUpStageKey(a)) ? 0 : 1;
