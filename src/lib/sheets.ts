@@ -606,7 +606,7 @@ export function computeExperimentResults(
     rowIndexes.forEach(rowIndex => {
       const c = contactByRow.get(rowIndex);
       if (!c) return;
-      if (POSITIVE_REPLIES.includes(c.reply.toLowerCase())) replied++;
+      if (MESSAGE_WIN_REPLIES.includes(c.reply.toLowerCase())) replied++;
     });
 
     const sent = rowIndexes.size;
@@ -621,8 +621,10 @@ export function computeExperimentResults(
   };
 }
 
-// 'referred' means the contact pointed us elsewhere, not that they're
-// personally interested — excluded from positive-reply stats and follow-ups
+// 'referred' (the contact pointed us to a colleague) is deliberately NOT in
+// here: this drives follow-up cadence, Tier 2, badges and the Replied tab, where
+// a referral shouldn't queue the original contact. Reply-rate/message stats use
+// MESSAGE_WIN_REPLIES instead, which does count it.
 export const POSITIVE_REPLIES = ['interested', 'yes'];
 
 // Template abbreviations in Connections have case/punctuation variants
@@ -1179,9 +1181,10 @@ export function attributeSends(contacts: Contact[], activity: ActivityEvent[]): 
 
 // What counts as a "win" for template performance. Broader than POSITIVE_REPLIES
 // (which also drives follow-up cadence/Tier 2/badges, so can't change here):
-// Opportunity and Client are the best outcomes a message can produce. Referred
-// is a reply but not interest, so it stays out.
-const MESSAGE_WIN_REPLIES = ['interested', 'yes', 'opportunity', 'client'];
+// Opportunity and Client are the best outcomes a message can produce, and
+// Referred counts too - someone confirming a colleague is the right person to
+// contact is a positive reply to the message.
+const MESSAGE_WIN_REPLIES = ['interested', 'yes', 'opportunity', 'client', 'referred'];
 
 export interface MessageStageStats {
   stage: ReplyStage;
