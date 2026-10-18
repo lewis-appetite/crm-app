@@ -88,7 +88,6 @@ interface UpdateBody {
     addressConfirmedBy?: string;
     dateReviewed?: string;
   };
-  message?: { messageType: string; abbreviation: string; hidden: boolean };
   experiment?: {
     testId: string;
     name?: string;
@@ -196,6 +195,18 @@ export default function OutreachApp() {
 
   const [copied, setCopied] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  // Hidden message templates live only in this browser (localStorage), keyed by
+  // "<type>|<normalized abbreviation>" - never written to the sheet
+  const [hiddenMessageKeys, setHiddenMessageKeys] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('hiddenMessages');
+      if (raw) setHiddenMessageKeys(new Set(JSON.parse(raw) as string[]));
+    } catch { /* storage unavailable - nothing hidden */ }
+  }, []);
+
+  const messageKey = (m: { messageType: string; abbreviation: string }) => `${m.messageType}|${normAbbr(m.abbreviation)}`;
+  const messages = (data?.messages ?? []).map(m => ({ ...m, hidden: hiddenMessageKeys.has(messageKey(m)) }));
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -419,7 +430,7 @@ export default function OutreachApp() {
 
   const baseSuggestion: SuggestedMessage | null =
     contact && data
-      ? suggestMessage(contact, data.allContacts, data.messages, tab === 'followup')
+      ? suggestMessage(contact, data.allContacts, messages, tab === 'followup')
       : null;
 
   // Overrides the normal reply-rate-based suggestion with this contact's
@@ -444,11 +455,11 @@ export default function OutreachApp() {
       }
     : baseSuggestion;
 
-  const messageOptions = data?.messages.filter(m => !m.hidden).filter(m =>
+  const messageOptions = messages.filter(m => !m.hidden).filter(m =>
     tab === 'new'
       ? m.messageType === 'Initial Outreach'
       : m.messageType === 'Follow Up'
-  ) ?? [];
+  );
 
   const focusGroups: CompanyGroup[] = (data?.focus ?? [])
     .map(g => ({ ...g, contacts: g.contacts.filter(c => !dismissed.has(c.rowIndex)) }))
@@ -571,20 +582,15 @@ export default function OutreachApp() {
     await silentRefresh();
   }
 
-  async function handleToggleMessageHidden(messageType: string, abbreviation: string, hidden: boolean) {
-    setData(prev =>
-      prev
-        ? {
-            ...prev,
-            messages: prev.messages.map(m =>
-              m.messageType === messageType && m.abbreviation === abbreviation ? { ...m, hidden } : m
-            ),
-          }
-        : prev
-    );
-    const payload: UpdateBody = { message: { messageType, abbreviation, hidden } };
-    const ok = await postUpdate(payload);
-    if (!ok) setFailedWrites(prev => [...prev, payload]);
+  function handleToggleMessageHidden(messageType: string, abbreviation: string, hidden: boolean) {
+    const next = new Set(hiddenMessageKeys);
+    const key = messageKey({ messageType, abbreviation });
+    if (hidden) next.add(key);
+    else next.delete(key);
+    setHiddenMessageKeys(next);
+    try {
+      localStorage.setItem('hiddenMessages', JSON.stringify(Array.from(next)));
+    } catch { /* storage unavailable - hide lasts until refresh */ }
   }
 
   async function handleEndExperiment(testId: string, winner: string) {
@@ -1282,7 +1288,7 @@ export default function OutreachApp() {
 
         /* ── MESSAGES TAB ── */
         : tab === 'messages' ? (
-          <MessagesTab onToggleHidden={handleToggleMessageHidden} allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} activity={[...(data?.activity ?? []), ...localEvents]} />
+          <MessagesTab onToggleHidden={handleToggleMessageHidden} allContacts={data?.allContacts ?? []} messages={messages} activity={[...(data?.activity ?? []), ...localEvents]} />
         )
 
         /* ── PROSPECTS TAB ── */
@@ -1301,7 +1307,7 @@ export default function OutreachApp() {
           <TestsTab
             experiments={data?.experiments ?? []}
             results={data?.experimentResults ?? []}
-            messages={data?.messages ?? []}
+            messages={messages}
             onCreate={handleCreateExperiment}
             onEnd={handleEndExperiment}
           />

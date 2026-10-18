@@ -57,7 +57,6 @@ export interface AppsScriptPayload {
     position?: string;
     url?: string;
   };
-  message?: { messageType: string; abbreviation: string; hidden: boolean };
   experiment?: {
     testId: string;
     name?: string;

@@ -33,7 +33,7 @@ export interface Message {
   target: string;
   abbreviation: string;
   fullMessage: string;
-  hidden: boolean; // kept in the sheet and all stats, but dropped from pickers/suggestions
+  hidden: boolean; // set client-side (browser-local hide list); dropped from pickers/suggestions, kept in all stats
 }
 
 export interface SuggestedMessage {
@@ -452,17 +452,13 @@ export function groupProspects(
   return Array.from(groups.values());
 }
 
-// Messages tab is positional (A-D) except the optional `Hidden` column, which
-// is resolved by header text so it can sit anywhere (the Apps Script appends it
-// on first use).
 export function parseMessages(rows: string[][]): Message[] {
-  const hiddenCol = (rows[0] || []).findIndex(h => (h || '').trim().toLowerCase() === 'hidden');
   return rows.slice(1).map(row => ({
     messageType: (row[0] || '').trim(),
     target: (row[1] || '').trim(),
     abbreviation: (row[2] || '').trim(),
     fullMessage: (row[3] || '').trim(),
-    hidden: hiddenCol >= 0 && ['true', 'yes', '1', 'x'].includes((row[hiddenCol] || '').trim().toLowerCase()),
+    hidden: false, // overlaid client-side from the browser's hide list
   }));
 }
 

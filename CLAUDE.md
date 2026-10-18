@@ -48,8 +48,8 @@ Three Google Sheets tabs:
 | 2 | Abbreviation (short code used in Connections sheet) |
 | 3 | Full Message text |
 
-### Messages tab — optional `Hidden` column
-Header-resolved (`parseMessages` in `sheets.ts`; the A-D columns stay positional). TRUE hides a template from the New/Follow-ups pickers, `suggestMessage`, and the Tests screen dropdowns — but never from stats, the Messages screen (dimmed, behind a "Hidden (n)" toggle), or the All tab's edit dropdown, so history keeps resolving. Hide/Unhide buttons on the Messages screen write it via the Apps Script `message` handler (matches Message Type + Abbreviation, because a few abbreviations exist as both an Initial Outreach and a Follow Up row; appends the `Hidden` header on first use).
+### Hiding message templates (browser-local, not in the sheet)
+Hide/Unhide buttons on the Messages screen keep a hide list in `localStorage` (`hiddenMessages`, keys `<type>|<normalized abbreviation>`, since a few abbreviations exist as both an Initial Outreach and a Follow Up row). `OutreachApp.tsx` overlays `hidden` onto `data.messages` and passes the overlaid list on. Hidden templates drop out of the New/Follow-ups pickers, `suggestMessage`, and the Tests dropdowns — never from stats, the Messages screen (dimmed, behind a "Hidden (n)" toggle), or the All tab's edit dropdown (`messageAbbrs`, deliberately unfiltered so older contacts keep resolving). It is per browser/device by design — nothing is written to the sheet. (An earlier version stored this in a `Hidden` column via an Apps Script handler; dropped because it needed an Apps Script redeploy and never took effect.)
 
 ### Activity tab (append-only log, one row per action)
 | Col | Field |

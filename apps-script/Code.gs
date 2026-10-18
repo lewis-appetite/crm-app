@@ -81,26 +81,6 @@ function doPost(e) {
     }
   }
 
-  // Hide/unhide a message template: sets (or clears) the Hidden flag on the
-  // Messages row whose Message Type (A) and Abbreviation (C) match - a few
-  // abbreviations exist as both an Initial Outreach and a Follow Up row, and
-  // those are hidden independently. The Hidden column is
-  // appended on first use, so no manual sheet setup is needed.
-  if (body.message && body.message.abbreviation) {
-    var msgSheet = ss.getSheetByName('Messages');
-    if (msgSheet) {
-      var hiddenColIdx = sheetHeaderIndexOrAppend_('Messages', 'Hidden');
-      var msgRows = msgSheet.getRange(1, 1, msgSheet.getLastRow(), 3).getValues();
-      var wantedType = String(body.message.messageType || '').trim();
-      var wantedAbbr = String(body.message.abbreviation).trim();
-      for (var m = 1; m < msgRows.length; m++) {
-        if (String(msgRows[m][2]).trim() === wantedAbbr && String(msgRows[m][0]).trim() === wantedType) {
-          msgSheet.getRange(m + 1, hiddenColIdx).setValue(body.message.hidden ? 'TRUE' : '');
-        }
-      }
-    }
-  }
-
   if (body.campaign) {
     var campSheet = ss.getSheetByName('Campaigns');
     if (campSheet) {
