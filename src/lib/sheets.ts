@@ -1093,7 +1093,8 @@ export interface AttributedSend {
   stage: ReplyStage;
   template: string;
   contact: Contact;
-  credited: boolean; // the one send this contact's reply is attributed to
+  credited: boolean; // this contact's reply is attributed to this send
+  approx: boolean; // credited without a reply date, so every send in the sequence got the credit
 }
 
 // One record per template send (contact x stage), with each reply credited to
@@ -1105,11 +1106,13 @@ export interface AttributedSend {
 // credited to the last send on or before the date of the contact's most recent
 // matching `reply` event. Sends without a logged date predate the log, and so
 // (since the reply itself is logged) predate the reply. A reply with no log
-// entry (set directly in the sheet, or pre-log) can't be dated, so it is
-// assumed to answer the contact's FIRST send (dated positive replies mostly
-// land straight after the initial message), and their later sends are dropped
-// as post-reply. Leaving these contacts out instead would remove repliers from
-// the rates while keeping every non-replier, biasing every rate downward.
+// entry (set directly in the sheet, or pre-log) can't be dated, so nothing can
+// say which message earned it: every send in that contact's sequence is
+// credited and flagged `approx` (an upper bound for each message). Guessing one
+// send (first or last) silently zeroes the others - e.g. a follow-up that really
+// did earn replies - and leaving these contacts out removes repliers while
+// keeping every non-replier, biasing every rate downward. Dated replies are
+// exact, and the approximate share shrinks as replies get logged with dates.
 export interface AttributionResult {
   sends: AttributedSend[];
   unattributedReplies: number;
@@ -1148,7 +1151,7 @@ export function attributeSends(contacts: Contact[], activity: ActivityEvent[]): 
     // reply from the contact - those sends all count as unanswered
     const reply = c.reply.toLowerCase();
     if (!REPLY_BREAKDOWN_ANY.includes(reply)) {
-      sends.forEach(s => out.push({ stage: s.stage, template: s.template, contact: c, credited: false }));
+      sends.forEach(s => out.push({ stage: s.stage, template: s.template, contact: c, credited: false, approx: false }));
       return;
     }
 
@@ -1156,13 +1159,13 @@ export function attributeSends(contacts: Contact[], activity: ActivityEvent[]): 
     if (replyTime === null) {
       if (sends.length > 0) {
         unattributedReplies++;
-        out.push({ stage: sends[0].stage, template: sends[0].template, contact: c, credited: true });
+        sends.forEach(s => out.push({ stage: s.stage, template: s.template, contact: c, credited: true, approx: true }));
       }
       return;
     }
     const exposed = sends.filter(s => s.time === null || s.time <= replyTime);
     exposed.forEach((s, i) =>
-      out.push({ stage: s.stage, template: s.template, contact: c, credited: i === exposed.length - 1 })
+      out.push({ stage: s.stage, template: s.template, contact: c, credited: i === exposed.length - 1, approx: false })
     );
   });
   return { sends: out, unattributedReplies };
@@ -1178,6 +1181,7 @@ export interface MessageStageStats {
   stage: ReplyStage;
   sent: number;
   replied: number;
+  confirmed: number; // of `replied`, how many are backed by a logged reply date
   replyRate: number | null; // replied / sent
 }
 
@@ -1185,6 +1189,7 @@ export interface MessageStats {
   abbreviation: string;
   sent: number; // sends before any reply, across all stages
   replied: number;
+  confirmed: number;
   replyRate: number | null; // replied / sent, blended across every stage the template was used at
   byStage: MessageStageStats[]; // same numbers split by the stage each send happened at
 }
@@ -1198,16 +1203,30 @@ export function getMessageStats(
   messages: Message[],
   activity: ActivityEvent[] = []
 ): MessageStats[] {
-  const stats = new Map<string, Map<ReplyStage, { sent: number; replied: number }>>();
+  const stats = new Map<string, Map<ReplyStage, { sent: number; replied: number; confirmed: number }>>();
+
+  // A contact who got the same template at two stages is one winning contact,
+  // not two, in the blended total (the per-stage split still counts each stage)
+  const winners = new Map<string, Set<number>>();
+  const confirmedWinners = new Map<string, Set<number>>();
 
   attributeSends(contacts, activity).sends.forEach(s => {
     const key = normAbbr(s.template);
     if (!stats.has(key)) stats.set(key, new Map());
     const stages = stats.get(key)!;
-    if (!stages.has(s.stage)) stages.set(s.stage, { sent: 0, replied: 0 });
+    if (!stages.has(s.stage)) stages.set(s.stage, { sent: 0, replied: 0, confirmed: 0 });
     const g = stages.get(s.stage)!;
     g.sent++;
-    if (s.credited && MESSAGE_WIN_REPLIES.includes(s.contact.reply.toLowerCase())) g.replied++;
+    if (s.credited && MESSAGE_WIN_REPLIES.includes(s.contact.reply.toLowerCase())) {
+      g.replied++;
+      if (!s.approx) g.confirmed++;
+      if (!winners.has(key)) winners.set(key, new Set());
+      winners.get(key)!.add(s.contact.rowIndex);
+      if (!s.approx) {
+        if (!confirmedWinners.has(key)) confirmedWinners.set(key, new Set());
+        confirmedWinners.get(key)!.add(s.contact.rowIndex);
+      }
+    }
   });
 
   const rate = (g: { sent: number; replied: number }) =>
@@ -1216,13 +1235,19 @@ export function getMessageStats(
   return messages.map(m => {
     const stages = stats.get(normAbbr(m.abbreviation));
     const byStage: MessageStageStats[] = Array.from(stages ?? [])
-      .map(([stage, g]) => ({ stage, sent: g.sent, replied: g.replied, replyRate: rate(g) }))
+      .map(([stage, g]) => ({ stage, sent: g.sent, replied: g.replied, confirmed: g.confirmed, replyRate: rate(g) }))
       .sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage));
-    const total = byStage.reduce((t, g) => ({ sent: t.sent + g.sent, replied: t.replied + g.replied }), { sent: 0, replied: 0 });
+    const key = normAbbr(m.abbreviation);
+    const total = {
+      sent: byStage.reduce((n, g) => n + g.sent, 0),
+      replied: winners.get(key)?.size ?? 0,
+      confirmed: confirmedWinners.get(key)?.size ?? 0,
+    };
     return {
       abbreviation: m.abbreviation,
       sent: total.sent,
       replied: total.replied,
+      confirmed: total.confirmed,
       replyRate: rate(total),
       byStage,
     };

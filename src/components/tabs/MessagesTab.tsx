@@ -30,7 +30,7 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
 
   // 'all' blends every stage a template was used at; picking a stage shows each
   // template's numbers at that stage only, and hides templates never sent there
-  const statsMap: Record<string, { sent: number; replied: number; replyRate: number | null } | undefined> =
+  const statsMap: Record<string, { sent: number; replied: number; confirmed: number; replyRate: number | null } | undefined> =
     Object.fromEntries(allStats.map(s => [s.abbreviation, stageFilter === 'all' ? s : s.byStage.find(b => b.stage === stageFilter)]));
   const byStageMap = Object.fromEntries(allStats.map(s => [s.abbreviation, s.byStage]));
   const hiddenCount = messages.filter(m => m.hidden).length;
@@ -91,7 +91,7 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
 
       {unattributedReplies > 0 && (
         <div className={styles.messageSentRow}>
-          {unattributedReplies} {unattributedReplies === 1 ? 'reply has' : 'replies have'} no logged date and {unattributedReplies === 1 ? 'is' : 'are'} credited to the initial message
+          {unattributedReplies} {unattributedReplies === 1 ? 'reply has' : 'replies have'} no logged date, so every message that contact received gets the credit - rates are upper bounds until replies are dated
         </div>
       )}
 
@@ -109,7 +109,7 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
                     </span>
                     <span className={styles.msgTableAbbr}>{msg.abbreviation}</span>
                     {s && s.sent > 0 && (
-                      <span className={styles.msgTableSent}>{s.replied}/{s.sent} sent</span>
+                      <span className={styles.msgTableSent}>{s.replied}/{s.sent} sent{s.confirmed < s.replied ? ` (${s.confirmed} dated)` : ''}</span>
                     )}
                     <button className={styles.hideBtn} onClick={() => onToggleHidden(msg.messageType, msg.abbreviation, !msg.hidden)}>
                       {msg.hidden ? 'Unhide' : 'Hide'}
@@ -143,6 +143,7 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
               {s && s.sent > 0 && (
                 <div className={styles.messageSentRow}>
                   {s.replied} positive / {s.sent} sent
+                  {s.confirmed < s.replied && ` (${s.confirmed} confirmed by reply date)`}
                 </div>
               )}
               {stageFilter === 'all' && (byStageMap[msg.abbreviation]?.length ?? 0) > 1 && (
