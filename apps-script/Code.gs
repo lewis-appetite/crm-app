@@ -414,6 +414,59 @@ function campaignsHeaderIndexOrAppend_(headerText) {
   return sheetHeaderIndexOrAppend_('Campaigns', headerText);
 }
 
+// Simple trigger (runs automatically once this file is saved - no install, no
+// redeploy): when a Reply? cell is edited by hand in the sheet, log a dated
+// `reply` event to Activity, same shape the app writes. Without this, replies
+// typed straight into the sheet have no date and can't be attributed to the
+// message that earned them. Script writes (doPost) never fire onEdit, so
+// app-made changes aren't double-logged.
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var range = e.range;
+    var sheet = range.getSheet();
+    if (sheet.getName() !== 'Connections') return;
+
+    var replyCol = connectionsHeaderIndex_('Reply?');
+    if (!replyCol || replyCol < range.getColumn() || replyCol > range.getLastColumn()) return;
+
+    // Bulk pastes/cleanups would otherwise stamp hundreds of fake "today" replies
+    var firstRow = Math.max(range.getRow(), 2);
+    var numRows = range.getLastRow() - firstRow + 1;
+    if (numRows < 1 || numRows > 25) return;
+
+    var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Activity');
+    if (!logSheet) return;
+
+    var firstNameCol = connectionsHeaderIndex_('First Name');
+    var lastNameCol = connectionsHeaderIndex_('Last Name');
+    var companyCol = connectionsHeaderIndex_('Company');
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
+    var replies = sheet.getRange(firstRow, replyCol, numRows, 1).getValues();
+
+    for (var i = 0; i < numRows; i++) {
+      var value = String(replies[i][0]).trim();
+      if (!value) continue;
+      var row = firstRow + i;
+      var name = [
+        firstNameCol ? sheet.getRange(row, firstNameCol).getValue() : '',
+        lastNameCol ? sheet.getRange(row, lastNameCol).getValue() : '',
+      ].join(' ').trim();
+      logSheet.appendRow([
+        today,
+        row,
+        name,
+        companyCol ? sheet.getRange(row, companyCol).getValue() : '',
+        'reply',
+        '',
+        value,
+      ]);
+    }
+  } catch (err) {
+    // Never let logging break a manual edit
+  }
+}
+
 function colLetterFromIndex_(index1Based) {
   var s = '';
   var n = index1Based;

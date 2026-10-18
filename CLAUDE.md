@@ -59,7 +59,7 @@ Three Google Sheets tabs:
 | F | Template abbreviation |
 | G | Detail (reply value for `reply` actions) |
 
-Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts. Other actions logged: `snooze` (detail = reappear date, read by `getActiveSnoozes`), `emaildraft` (detail = auto/manual, drives auto-draft dedupe), `callbooked`.
+Appended by the Apps Script on writes (see `apps-script/Code.gs`). Exists because Last Contacted is overwritten on each touch — the log makes streaks/weekly stats permanent history. `getStats` merges log events with lastContacted-derived events (log wins on same contact+day) so pre-log history still counts. `apps-script/Code.gs onEdit` (a simple trigger — active as soon as the script is saved, no redeploy) also logs a dated `reply` event when a Reply? cell is edited by hand in the sheet (skips bulk edits over 25 rows; script writes never fire it, so app edits aren't double-logged) — this is what keeps reply dates complete for template attribution. Other actions logged: `snooze` (detail = reappear date, read by `getActiveSnoozes`), `emaildraft` (detail = auto/manual, drives auto-draft dedupe), `callbooked`.
 
 ### Campaigns tab (cake-campaign pipeline + company-level ICP tracking)
 
@@ -176,7 +176,7 @@ Needs a decision on a single maintained ICP source (likely the Google Doc, with 
 
 ## Planned Changes (Phase 2/3 of gamification)
 
-- **True reply attribution** — currently a positive reply credits every template in the contact's sequence (Reply col has no timestamp, so we can't know which message triggered it). Once the Activity log accumulates, attribute each `reply` event to the last message sent to that contact before the reply date. Keep sequence-credit as fallback for pre-log contacts.
+- ~~**True reply attribution**~~ — DONE (`attributeSends` in `sheets.ts`, used by `getMessageStats`, `getReplyBreakdown`, `getStats().replyRates`). Each reply is credited to the last send on/before its logged `reply` date; sends after the reply are dropped from "sent". Replies with no logged date (set in the sheet directly, or pre-log) are credited to the contact's FIRST send and their later sends dropped (70% of dated positives land straight after the initial message) — do NOT instead exclude them: that removes repliers but keeps every non-replier and biases all rates down (tried and reverted). "Win" for template stats is `MESSAGE_WIN_REPLIES` (interested/yes/opportunity/client), deliberately broader than `POSITIVE_REPLIES`. Follow-up-stage rates remain directional only until every reply is dated. Replies set via the app log a dated event, so this fills in over time. Messages tab has a stage selector (All / Initial / FU1…) so a template's rate at one stage isn't blended with another; "All stages" shows the blended rate plus a per-stage line.
 - **Explore/exploit nudges** — occasionally suggest under-tested templates ("only 4 sends, needs data") so new messages get sample size
 - **Messages tab** — confidence indicators on reply rates + week-over-week trend arrows (needs Activity log data to accumulate)
 - **Streak polish** — streak-at-risk warning, milestone badges, personal bests
