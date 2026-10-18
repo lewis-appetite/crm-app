@@ -9,9 +9,10 @@ type MessagesView = 'cards' | 'table';
 const stageLabel = (stage: ReplyStage) => (stage === 'new' ? 'Initial' : `FU${stage.slice('followup'.length)}`);
 const stageNum = (stage: ReplyStage) => (stage === 'new' ? 0 : parseInt(stage.slice('followup'.length), 10));
 
-export default function MessagesTab({ allContacts, messages, activity }: { allContacts: Contact[]; messages: Message[]; activity: ActivityEvent[] }) {
+export default function MessagesTab({ allContacts, messages, activity, onToggleHidden }: { allContacts: Contact[]; messages: Message[]; activity: ActivityEvent[]; onToggleHidden: (messageType: string, abbreviation: string, hidden: boolean) => void }) {
   const [messagesView, setMessagesView] = useState<MessagesView>('cards');
   const [stageFilter, setStageFilter] = useState<'all' | ReplyStage>('all');
+  const [showHidden, setShowHidden] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
   const msgCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -32,7 +33,9 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
   const statsMap: Record<string, { sent: number; replied: number; replyRate: number | null } | undefined> =
     Object.fromEntries(allStats.map(s => [s.abbreviation, stageFilter === 'all' ? s : s.byStage.find(b => b.stage === stageFilter)]));
   const byStageMap = Object.fromEntries(allStats.map(s => [s.abbreviation, s.byStage]));
-  const visibleMessages = stageFilter === 'all' ? messages : messages.filter(m => (statsMap[m.abbreviation]?.sent ?? 0) > 0);
+  const hiddenCount = messages.filter(m => m.hidden).length;
+  const stageMessages = stageFilter === 'all' ? messages : messages.filter(m => (statsMap[m.abbreviation]?.sent ?? 0) > 0);
+  const visibleMessages = showHidden ? stageMessages : stageMessages.filter(m => !m.hidden);
 
   const GROUP_ORDER = ['initial outreach', 'follow up'];
   const groupRank = (type: string) => {
@@ -78,6 +81,12 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
             onClick={() => setStageFilter(st)}
           >{st === 'all' ? 'All stages' : stageLabel(st)}</button>
         ))}
+        {hiddenCount > 0 && (
+          <button
+            className={`${styles.viewToggleBtn} ${showHidden ? styles.viewToggleActive : ''}`}
+            onClick={() => setShowHidden(v => !v)}
+          >{showHidden ? 'Hide hidden' : `Hidden (${hiddenCount})`}</button>
+        )}
       </div>
 
       {unattributedReplies > 0 && (
@@ -94,7 +103,7 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
               {groupMsgs.map(msg => {
                 const s = statsMap[msg.abbreviation];
                 return (
-                  <div key={msg.abbreviation} className={styles.msgTableRow}>
+                  <div key={msg.abbreviation} className={`${styles.msgTableRow} ${msg.hidden ? styles.messageHidden : ''}`}>
                     <span className={styles.msgTableRate}>
                       {s?.replyRate !== null && s?.replyRate !== undefined ? `${s.replyRate}%` : '—'}
                     </span>
@@ -102,6 +111,9 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
                     {s && s.sent > 0 && (
                       <span className={styles.msgTableSent}>{s.replied}/{s.sent} sent</span>
                     )}
+                    <button className={styles.hideBtn} onClick={() => onToggleHidden(msg.messageType, msg.abbreviation, !msg.hidden)}>
+                      {msg.hidden ? 'Unhide' : 'Hide'}
+                    </button>
                   </div>
                 );
               })}
@@ -112,7 +124,7 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
         sortedMessages.map((msg, i) => {
           const s = statsMap[msg.abbreviation];
           return (
-            <div key={i} className={styles.messageItem}>
+            <div key={i} className={`${styles.messageItem} ${msg.hidden ? styles.messageHidden : ''}`}>
               <div className={styles.messageItemHeader}>
                 <div className={styles.messageItemMeta}>
                   <span className={styles.messageTypeBadge}>{msg.messageType}</span>
@@ -123,6 +135,9 @@ export default function MessagesTab({ allContacts, messages, activity }: { allCo
                     <span className={styles.ratePill}>{s.replyRate}%</span>
                   )}
                   <span className={styles.messageAbbr}>{msg.abbreviation}</span>
+                  <button className={styles.hideBtn} onClick={() => onToggleHidden(msg.messageType, msg.abbreviation, !msg.hidden)}>
+                    {msg.hidden ? 'Unhide' : 'Hide'}
+                  </button>
                 </div>
               </div>
               {s && s.sent > 0 && (

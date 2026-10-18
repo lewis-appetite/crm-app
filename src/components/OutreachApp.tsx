@@ -88,6 +88,7 @@ interface UpdateBody {
     addressConfirmedBy?: string;
     dateReviewed?: string;
   };
+  message?: { messageType: string; abbreviation: string; hidden: boolean };
   experiment?: {
     testId: string;
     name?: string;
@@ -443,7 +444,7 @@ export default function OutreachApp() {
       }
     : baseSuggestion;
 
-  const messageOptions = data?.messages.filter(m =>
+  const messageOptions = data?.messages.filter(m => !m.hidden).filter(m =>
     tab === 'new'
       ? m.messageType === 'Initial Outreach'
       : m.messageType === 'Follow Up'
@@ -568,6 +569,22 @@ export default function OutreachApp() {
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
     await silentRefresh();
+  }
+
+  async function handleToggleMessageHidden(messageType: string, abbreviation: string, hidden: boolean) {
+    setData(prev =>
+      prev
+        ? {
+            ...prev,
+            messages: prev.messages.map(m =>
+              m.messageType === messageType && m.abbreviation === abbreviation ? { ...m, hidden } : m
+            ),
+          }
+        : prev
+    );
+    const payload: UpdateBody = { message: { messageType, abbreviation, hidden } };
+    const ok = await postUpdate(payload);
+    if (!ok) setFailedWrites(prev => [...prev, payload]);
   }
 
   async function handleEndExperiment(testId: string, winner: string) {
@@ -1265,7 +1282,7 @@ export default function OutreachApp() {
 
         /* ── MESSAGES TAB ── */
         : tab === 'messages' ? (
-          <MessagesTab allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} activity={[...(data?.activity ?? []), ...localEvents]} />
+          <MessagesTab onToggleHidden={handleToggleMessageHidden} allContacts={data?.allContacts ?? []} messages={data?.messages ?? []} activity={[...(data?.activity ?? []), ...localEvents]} />
         )
 
         /* ── PROSPECTS TAB ── */

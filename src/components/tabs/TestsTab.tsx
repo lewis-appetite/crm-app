@@ -47,7 +47,7 @@ export default function TestsTab({ experiments, results, messages, onCreate, onE
   const completed = experiments.filter(e => !isExperimentActive(e));
 
   const activeStages = new Set(active.map(e => e.stage));
-  const templateOptions = messages.filter(m => m.messageType === STAGE_MESSAGE_TYPE[stage]);
+  const templateOptions = messages.filter(m => !m.hidden && m.messageType === STAGE_MESSAGE_TYPE[stage]);
 
   function submit() {
     if (!name.trim() || !variantA || !variantB || variantA === variantB) return;
