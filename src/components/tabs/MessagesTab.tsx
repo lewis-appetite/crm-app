@@ -9,7 +9,7 @@ type MessagesView = 'cards' | 'table';
 const stageLabel = (stage: ReplyStage) => (stage === 'new' ? 'Initial' : `FU${stage.slice('followup'.length)}`);
 const stageNum = (stage: ReplyStage) => (stage === 'new' ? 0 : parseInt(stage.slice('followup'.length), 10));
 
-export default function MessagesTab({ allContacts, messages, activity, onToggleHidden }: { allContacts: Contact[]; messages: Message[]; activity: ActivityEvent[]; onToggleHidden: (messageType: string, abbreviation: string, hidden: boolean) => void }) {
+export default function MessagesTab({ allContacts, messages, activity, onToggleHidden, onToggleFavorite }: { allContacts: Contact[]; messages: Message[]; activity: ActivityEvent[]; onToggleHidden: (messageType: string, abbreviation: string, hidden: boolean) => void; onToggleFavorite: (messageType: string, abbreviation: string, favorite: boolean) => void }) {
   const [messagesView, setMessagesView] = useState<MessagesView>('cards');
   const [stageFilter, setStageFilter] = useState<'all' | ReplyStage>('all');
   const [showHidden, setShowHidden] = useState(false);
@@ -111,6 +111,11 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
                     {s && s.sent > 0 && (
                       <span className={styles.msgTableSent}>{s.replied}/{s.sent} sent{s.confirmed < s.replied ? ` (${s.confirmed} dated)` : ''}</span>
                     )}
+                    {msg.messageType === 'Initial Outreach' && (
+                      <button className={styles.hideBtn} onClick={() => onToggleFavorite(msg.messageType, msg.abbreviation, !msg.favorite)}>
+                        {msg.favorite ? '★ Favourite' : '☆ Favourite'}
+                      </button>
+                    )}
                     <button className={styles.hideBtn} onClick={() => onToggleHidden(msg.messageType, msg.abbreviation, !msg.hidden)}>
                       {msg.hidden ? 'Unhide' : 'Hide'}
                     </button>
@@ -135,6 +140,11 @@ export default function MessagesTab({ allContacts, messages, activity, onToggleH
                     <span className={styles.ratePill}>{s.replyRate}%</span>
                   )}
                   <span className={styles.messageAbbr}>{msg.abbreviation}</span>
+                  {msg.messageType === 'Initial Outreach' && (
+                    <button className={styles.hideBtn} onClick={() => onToggleFavorite(msg.messageType, msg.abbreviation, !msg.favorite)}>
+                      {msg.favorite ? '★ Favourite' : '☆ Favourite'}
+                    </button>
+                  )}
                   <button className={styles.hideBtn} onClick={() => onToggleHidden(msg.messageType, msg.abbreviation, !msg.hidden)}>
                     {msg.hidden ? 'Unhide' : 'Hide'}
                   </button>

@@ -198,10 +198,13 @@ export default function OutreachApp() {
   // Hidden message templates live only in this browser (localStorage), keyed by
   // "<type>|<normalized abbreviation>" - never written to the sheet
   const [hiddenMessageKeys, setHiddenMessageKeys] = useState<Set<string>>(new Set());
+  const [favoriteMessageKeys, setFavoriteMessageKeys] = useState<Set<string>>(new Set());
   useEffect(() => {
     try {
       const raw = localStorage.getItem('hiddenMessages');
       if (raw) setHiddenMessageKeys(new Set(JSON.parse(raw) as string[]));
+      const fav = localStorage.getItem('favoriteMessages');
+      if (fav) setFavoriteMessageKeys(new Set(JSON.parse(fav) as string[]));
     } catch { /* storage unavailable - nothing hidden */ }
   }, []);
 
@@ -210,7 +213,7 @@ export default function OutreachApp() {
     [data, localEvents]
   );
   const messageKey = (m: { messageType: string; abbreviation: string }) => `${m.messageType}|${normAbbr(m.abbreviation)}`;
-  const messages = (data?.messages ?? []).map(m => ({ ...m, hidden: hiddenMessageKeys.has(messageKey(m)) }));
+  const messages = (data?.messages ?? []).map(m => ({ ...m, hidden: hiddenMessageKeys.has(messageKey(m)), favorite: favoriteMessageKeys.has(messageKey(m)) }));
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -591,6 +594,17 @@ export default function OutreachApp() {
     const ok = await postUpdate(payload);
     if (!ok) setFailedWrites(prev => [...prev, payload]);
     await silentRefresh();
+  }
+
+  function handleToggleMessageFavorite(messageType: string, abbreviation: string, favorite: boolean) {
+    const next = new Set(favoriteMessageKeys);
+    const key = messageKey({ messageType, abbreviation });
+    if (favorite) next.add(key);
+    else next.delete(key);
+    setFavoriteMessageKeys(next);
+    try {
+      localStorage.setItem('favoriteMessages', JSON.stringify(Array.from(next)));
+    } catch { /* storage unavailable - favourite lasts until refresh */ }
   }
 
   function handleToggleMessageHidden(messageType: string, abbreviation: string, hidden: boolean) {
@@ -1299,7 +1313,7 @@ export default function OutreachApp() {
 
         /* ── MESSAGES TAB ── */
         : tab === 'messages' ? (
-          <MessagesTab onToggleHidden={handleToggleMessageHidden} allContacts={data?.allContacts ?? []} messages={messages} activity={[...(data?.activity ?? []), ...localEvents]} />
+          <MessagesTab onToggleHidden={handleToggleMessageHidden} onToggleFavorite={handleToggleMessageFavorite} allContacts={data?.allContacts ?? []} messages={messages} activity={[...(data?.activity ?? []), ...localEvents]} />
         )
 
         /* ── PROSPECTS TAB ── */
@@ -1592,7 +1606,7 @@ export default function OutreachApp() {
                   </span>
                 )}
                 <div className={styles.msgHeader}>
-                  <span className={styles.msgLabel}>Suggested message</span>
+                  <span className={styles.msgLabel}>{suggestion.favorite ? '★ Favourite message' : 'Suggested message'}</span>
                   <div className={styles.msgMeta}>
                     {suggestion.replyRate !== null && (
                       <span className={styles.ratePill}>{suggestion.replyRate}% reply rate</span>

@@ -34,9 +34,11 @@ export interface Message {
   abbreviation: string;
   fullMessage: string;
   hidden: boolean; // set client-side (browser-local hide list); dropped from pickers/suggestions, kept in all stats
+  favorite: boolean; // set client-side (browser-local); a favourite initial message beats the computed suggestion
 }
 
 export interface SuggestedMessage {
+  favorite?: boolean;
   abbreviation: string;
   fullMessage: string;
   replyRate: number | null;
@@ -459,6 +461,7 @@ export function parseMessages(rows: string[][]): Message[] {
     abbreviation: (row[2] || '').trim(),
     fullMessage: (row[3] || '').trim(),
     hidden: false, // overlaid client-side from the browser's hide list
+    favorite: false, // overlaid client-side from the browser's favourites list
   }));
 }
 
@@ -1020,9 +1023,13 @@ export function suggestMessage(
     [contact.message, ...followUpMessages(contact)].filter(Boolean).map(normAbbr)
   );
   const wantedType = isFollowUp ? 'Follow Up' : 'Initial Outreach';
-  const candidates = messages.filter(
+  const allCandidates = messages.filter(
     m => m.messageType === wantedType && !m.hidden && !alreadySent.has(normAbbr(m.abbreviation)) && !isOneOff(m.abbreviation)
   );
+  // Starred initial messages take precedence over the computed pick; with
+  // several starred, the best-performing of those wins (same tiers below)
+  const favourites = isFollowUp ? [] : allCandidates.filter(m => m.favorite);
+  const candidates = favourites.length > 0 ? favourites : allCandidates;
   if (candidates.length === 0) return null;
 
   const roleKeyword = contact.position.toLowerCase().split(' ')[0];
@@ -1074,6 +1081,7 @@ export function suggestMessage(
         replyRate: Math.round((t.replied / t.sent) * 100),
         sentCount: t.sent,
         repliedCount: t.replied,
+        favorite: favourites.length > 0,
       };
     }
   }
@@ -1085,6 +1093,7 @@ export function suggestMessage(
     replyRate: null,
     sentCount: 0,
     repliedCount: 0,
+    favorite: favourites.length > 0,
   };
 }
 
