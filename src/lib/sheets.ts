@@ -802,6 +802,10 @@ const REGION_ALIASES: Record<string, 'uk' | 'us'> = {
   usa: 'us',
 };
 
+// Functions that are real buyers for the outreach (the rest - Finance, HR &
+// People, Operations, Tech & Engineering, Other - are out of scope)
+export const OUTREACH_FUNCTIONS = ['Sales', 'Marketing', 'Account Management', 'Customer Success', 'Leadership & Executive'];
+
 export function normalizeRegion(region: string): 'uk' | 'us' | '' {
   return REGION_ALIASES[region.trim().toLowerCase()] ?? '';
 }

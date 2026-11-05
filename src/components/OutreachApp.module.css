@@ -2419,3 +2419,15 @@ a.prospectContactName:hover {
 .hideBtn:hover {
   border-color: rgba(255, 255, 255, 0.28);
 }
+
+.cakeReadyChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid rgba(232, 213, 176, 0.35);
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}

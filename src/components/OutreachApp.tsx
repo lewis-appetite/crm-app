@@ -16,6 +16,7 @@ import {
   POSITIVE_REPLIES,
   normalizeCompany,
   compareFollowUpCadence,
+  OUTREACH_FUNCTIONS, normalizeRegion,
 } from '@/lib/sheets';
 import CakeTab from './tabs/CakeTab';
 import StatsTab from './tabs/StatsTab';
@@ -390,6 +391,19 @@ export default function OutreachApp() {
         return aPinned - bPinned;
       })
     : [];
+
+  // New contacts ready to send right now: in the target audience (UK/US, buyer
+  // function) with a cake mockup image available. Fixed definition - deliberately
+  // independent of the New tab's List/Function dropdowns.
+  const cakeReadyCount = data
+    ? data.newContacts.filter(
+        c =>
+          !dismissed.has(c.rowIndex) &&
+          normalizeRegion(c.region) !== '' &&
+          OUTREACH_FUNCTIONS.includes(c.function) &&
+          !!getCakeLink(c.company)
+      ).length
+    : 0;
 
   const queue = data
     ? (tab === 'followup' ? sortedFollowUps : sortedNewContacts).filter(
@@ -1403,6 +1417,12 @@ export default function OutreachApp() {
           <>
             {tab === 'new' && (
               <div className={styles.queueControls}>
+                <span
+                  className={styles.cakeReadyChip}
+                  title="New contacts in the UK/US in Sales, Marketing, Account Management, Customer Success or Leadership & Executive who have a cake mockup image ready"
+                >
+                  🎂 {cakeReadyCount} cake-ready
+                </span>
                 <select className={styles.sortSelect} value={newSort} onChange={e => { setNewSort(e.target.value as NewSort); setIndex(0); }}>
                   <option value="recent">Recently connected</option>
                   <option value="oldest">Oldest connected</option>
@@ -1439,6 +1459,12 @@ export default function OutreachApp() {
             {/* Sort/filter bar for New Contacts */}
             {tab === 'new' && (
               <div className={styles.queueControls}>
+                <span
+                  className={styles.cakeReadyChip}
+                  title="New contacts in the UK/US in Sales, Marketing, Account Management, Customer Success or Leadership & Executive who have a cake mockup image ready"
+                >
+                  🎂 {cakeReadyCount} cake-ready
+                </span>
                 <select className={styles.sortSelect} value={newSort} onChange={e => { setNewSort(e.target.value as NewSort); setIndex(0); }}>
                   <option value="recent">Recently connected</option>
                   <option value="oldest">Oldest connected</option>
